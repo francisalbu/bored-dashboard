@@ -136,7 +136,7 @@ const calculateAnalytics = () => {
 
   const topNationalities = Object.entries(nationalityCounts)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 5)
+    .slice(0, 8)
     .map(([country, count]) => ({
       country,
       count,
@@ -148,7 +148,8 @@ const calculateAnalytics = () => {
     '18-29': mockGuests.filter(g => g.age && g.age >= 18 && g.age <= 29).length,
     '30-39': mockGuests.filter(g => g.age && g.age >= 30 && g.age <= 39).length,
     '40-49': mockGuests.filter(g => g.age && g.age >= 40 && g.age <= 49).length,
-    '50+': mockGuests.filter(g => g.age && g.age >= 50).length,
+    '50-59': mockGuests.filter(g => g.age && g.age >= 50 && g.age <= 59).length,
+    '60+': mockGuests.filter(g => g.age && g.age >= 60).length,
   };
 
   // Status distribution
@@ -158,28 +159,100 @@ const calculateAnalytics = () => {
     Inactive: mockGuests.filter(g => g.status === 'Inactive').length,
   };
 
-  // Insights - USA citizens 40+ booking patterns
-  const usaGuests40Plus = mockGuests.filter(g => g.nationality === 'USA' && g.age && g.age >= 40);
-  const avgBookingsUSA40Plus = usaGuests40Plus.reduce((sum, g) => sum + g.bookingsCount, 0) / (usaGuests40Plus.length || 1);
-  const totalAvgBookings = mockGuests.reduce((sum, g) => sum + g.bookingsCount, 0) / mockGuests.length;
+  // Revenue by segment
+  const vipRevenue = mockGuests.filter(g => g.status === 'VIP').reduce((s, g) => s + g.totalSpend, 0);
+  const topGuestRevenue = mockGuests.filter(g => g.tags.includes('Top Guest') && g.status !== 'VIP').reduce((s, g) => s + g.totalSpend, 0);
+  const repeatRevenue = mockGuests.filter(g => g.tags.includes('Repeat Guest') && !g.tags.includes('Top Guest') && g.status !== 'VIP').reduce((s, g) => s + g.totalSpend, 0);
+  const newGuestRevenue = mockGuests.filter(g => g.tags.includes('New')).reduce((s, g) => s + g.totalSpend, 0);
+  const otherRevenue = mockGuests.reduce((s, g) => s + g.totalSpend, 0) - vipRevenue - topGuestRevenue - repeatRevenue - newGuestRevenue;
+  const totalRevenue = mockGuests.reduce((s, g) => s + g.totalSpend, 0);
 
-  // Most common interests by age group
-  const interests40Plus = mockGuests
-    .filter(g => g.age && g.age >= 40)
-    .flatMap(g => g.interests);
-  const interestCounts40Plus = interests40Plus.reduce((acc, interest) => {
-    acc[interest] = (acc[interest] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // Booking frequency distribution
+  const bookingBuckets = {
+    '1 booking': mockGuests.filter(g => g.bookingsCount === 1).length,
+    '2-3 bookings': mockGuests.filter(g => g.bookingsCount >= 2 && g.bookingsCount <= 3).length,
+    '4-7 bookings': mockGuests.filter(g => g.bookingsCount >= 4 && g.bookingsCount <= 7).length,
+    '8-12 bookings': mockGuests.filter(g => g.bookingsCount >= 8 && g.bookingsCount <= 12).length,
+    '13+ bookings': mockGuests.filter(g => g.bookingsCount >= 13).length,
+  };
+
+  // Top interests overall
+  const allInterests = mockGuests.flatMap(g => g.interests);
+  const interestCounts = allInterests.reduce((acc, i) => { acc[i] = (acc[i] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const topInterests = Object.entries(interestCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([interest, count]) => ({ interest, count, percentage: (count / mockGuests.length) * 100 }));
+
+  // Avg spend per nationality (top 5)
+  const spendByNationality: Record<string, { total: number; count: number }> = {};
+  mockGuests.forEach(g => {
+    if (g.nationality) {
+      if (!spendByNationality[g.nationality]) spendByNationality[g.nationality] = { total: 0, count: 0 };
+      spendByNationality[g.nationality].total += g.totalSpend;
+      spendByNationality[g.nationality].count += 1;
+    }
+  });
+  const avgSpendByCountry = Object.entries(spendByNationality)
+    .map(([country, { total, count }]) => ({ country, avgSpend: total / count, count }))
+    .filter(c => c.count >= 5)
+    .sort((a, b) => b.avgSpend - a.avgSpend)
+    .slice(0, 6);
+
+  // Family size distribution
+  const familySizes = {
+    'Solo': mockGuests.filter(g => g.familySize === 1).length,
+    'Couple': mockGuests.filter(g => g.familySize === 2).length,
+    'Family (3)': mockGuests.filter(g => g.familySize === 3).length,
+    'Family (4+)': mockGuests.filter(g => g.familySize && g.familySize >= 4).length,
+  };
+
+  // Guest lifetime value tiers
+  const ltvTiers = {
+    '€0-100': mockGuests.filter(g => g.totalSpend <= 100).length,
+    '€100-500': mockGuests.filter(g => g.totalSpend > 100 && g.totalSpend <= 500).length,
+    '€500-1K': mockGuests.filter(g => g.totalSpend > 500 && g.totalSpend <= 1000).length,
+    '€1K-3K': mockGuests.filter(g => g.totalSpend > 1000 && g.totalSpend <= 3000).length,
+    '€3K+': mockGuests.filter(g => g.totalSpend > 3000).length,
+  };
+
+  // Monthly guest activity (simulated for last 6 months)
+  const monthlyTrend = [
+    { month: 'Sep', guests: 156, revenue: 42300 },
+    { month: 'Oct', guests: 189, revenue: 51800 },
+    { month: 'Nov', guests: 134, revenue: 38200 },
+    { month: 'Dec', guests: 245, revenue: 72400 },
+    { month: 'Jan', guests: 198, revenue: 58900 },
+    { month: 'Feb', guests: 221, revenue: 64200 },
+  ];
+
+  // Insights
+  const avgSpendPerGuest = totalRevenue / mockGuests.length;
+  const avgBookings = mockGuests.reduce((s, g) => s + g.bookingsCount, 0) / mockGuests.length;
+  const avgSatisfaction = mockGuests.reduce((s, g) => s + g.satisfaction, 0) / mockGuests.length;
+  const repeatRate = (mockGuests.filter(g => g.tags.includes('Repeat Guest')).length / mockGuests.length) * 100;
 
   return {
     topNationalities,
     ageRanges,
     statusCounts,
     totalGuests: mockGuests.length,
-    avgBookingsUSA40Plus,
-    totalAvgBookings,
-    topInterest40Plus: Object.entries(interestCounts40Plus).sort(([, a], [, b]) => b - a)[0]?.[0] || 'N/A'
+    totalRevenue,
+    avgSpendPerGuest,
+    avgBookings,
+    avgSatisfaction,
+    repeatRate,
+    vipRevenue,
+    topGuestRevenue,
+    repeatRevenue,
+    newGuestRevenue,
+    otherRevenue,
+    bookingBuckets,
+    topInterests,
+    avgSpendByCountry,
+    familySizes,
+    ltvTiers,
+    monthlyTrend,
   };
 };
 
@@ -509,78 +582,274 @@ export const GuestsView: React.FC = () => {
       {selectedTab === 'analytics' ? (
         /* Analytics View */
         <div className="space-y-8">
-          {/* Top Nationalities */}
-          <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
-            <h3 className="text-lg font-semibold text-bored-black mb-6">Guest demographics</h3>
-            <div className="space-y-4">
-              {analytics.topNationalities.map((item, index) => (
-                <div key={item.country} className="flex items-center gap-4">
-                  <span className="text-sm text-bored-gray-500 w-6">{index + 1}</span>
-                  <span className="text-sm font-medium text-bored-black w-24">{item.country}</span>
-                  <div className="flex-1 h-2 bg-bored-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-bored-neon to-yellow-300"
-                      style={{ width: `${item.percentage}%` }}
-                    />
-                  </div>
-                  <span className="text-sm text-bored-gray-500 w-16 text-right">{item.percentage.toFixed(1)}%</span>
-                </div>
-              ))}
+
+          {/* Key Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-5">
+              <p className="text-xs text-bored-gray-500 uppercase tracking-wide mb-1">Total revenue</p>
+              <p className="text-2xl font-light text-bored-black">€{Math.round(analytics.totalRevenue).toLocaleString()}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-5">
+              <p className="text-xs text-bored-gray-500 uppercase tracking-wide mb-1">Avg. spend / guest</p>
+              <p className="text-2xl font-light text-bored-black">€{Math.round(analytics.avgSpendPerGuest)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-5">
+              <p className="text-xs text-bored-gray-500 uppercase tracking-wide mb-1">Avg. bookings</p>
+              <p className="text-2xl font-light text-bored-black">{analytics.avgBookings.toFixed(1)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-5">
+              <p className="text-xs text-bored-gray-500 uppercase tracking-wide mb-1">Avg. satisfaction</p>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-2xl font-light text-bored-black">{analytics.avgSatisfaction.toFixed(1)}</p>
+                <span className="text-sm text-bored-gray-400">/ 5</span>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-5">
+              <p className="text-xs text-bored-gray-500 uppercase tracking-wide mb-1">Repeat rate</p>
+              <p className="text-2xl font-light text-bored-black">{analytics.repeatRate.toFixed(0)}%</p>
             </div>
           </div>
 
-          {/* Age Distribution */}
+          {/* Revenue by Segment + Monthly Trend */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Revenue by Guest Segment */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Revenue by guest segment</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'VIP guests', value: analytics.vipRevenue, color: 'from-yellow-400 to-amber-500' },
+                  { label: 'Top spenders', value: analytics.topGuestRevenue, color: 'from-blue-400 to-indigo-500' },
+                  { label: 'Repeat guests', value: analytics.repeatRevenue, color: 'from-emerald-400 to-green-500' },
+                  { label: 'New guests', value: analytics.newGuestRevenue, color: 'from-purple-400 to-violet-500' },
+                  { label: 'Other', value: analytics.otherRevenue, color: 'from-gray-300 to-gray-400' },
+                ].map(seg => {
+                  const pct = (seg.value / analytics.totalRevenue) * 100;
+                  return (
+                    <div key={seg.label}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium text-bored-black">{seg.label}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-bored-gray-400">{pct.toFixed(1)}%</span>
+                          <span className="text-sm font-medium text-bored-black">€{Math.round(seg.value).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-bored-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full bg-gradient-to-r ${seg.color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Monthly Trend */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Monthly trend</h3>
+              <div className="flex items-end gap-3 h-[200px]">
+                {analytics.monthlyTrend.map(m => {
+                  const maxRev = Math.max(...analytics.monthlyTrend.map(t => t.revenue));
+                  const h = (m.revenue / maxRev) * 100;
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-2">
+                      <span className="text-xs font-medium text-bored-black">€{(m.revenue / 1000).toFixed(0)}k</span>
+                      <div className="w-full flex flex-col items-center" style={{ height: '160px' }}>
+                        <div className="flex-1" />
+                        <div
+                          className="w-full bg-gradient-to-t from-bored-neon to-yellow-200 rounded-t-lg transition-all"
+                          style={{ height: `${h}%`, minHeight: '8px' }}
+                        />
+                      </div>
+                      <div className="text-center">
+                        <span className="text-xs text-bored-gray-500">{m.month}</span>
+                        <p className="text-[10px] text-bored-gray-400">{m.guests} guests</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Demographics Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Top Nationalities */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8 lg:col-span-1">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Top nationalities</h3>
+              <div className="space-y-3">
+                {analytics.topNationalities.map((item, index) => (
+                  <div key={item.country} className="flex items-center gap-3">
+                    <span className="text-xs text-bored-gray-400 w-4 font-medium">{index + 1}</span>
+                    <span className="text-sm font-medium text-bored-black w-20 truncate">{item.country}</span>
+                    <div className="flex-1 h-1.5 bg-bored-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-bored-neon to-yellow-300 rounded-full" style={{ width: `${item.percentage}%` }} />
+                    </div>
+                    <span className="text-xs text-bored-gray-500 w-14 text-right">{item.percentage.toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Age Distribution */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Age distribution</h3>
+              <div className="flex items-end gap-2 h-[200px]">
+                {Object.entries(analytics.ageRanges).map(([range, count]) => {
+                  const maxCount = Math.max(...Object.values(analytics.ageRanges));
+                  const h = (count / maxCount) * 100;
+                  const pct = ((count / analytics.totalGuests) * 100).toFixed(1);
+                  return (
+                    <div key={range} className="flex-1 flex flex-col items-center gap-2">
+                      <span className="text-xs font-medium text-bored-black">{pct}%</span>
+                      <div className="w-full flex flex-col items-center" style={{ height: '140px' }}>
+                        <div className="flex-1" />
+                        <div className="w-full bg-gradient-to-t from-bored-black/80 to-bored-black/20 rounded-t-lg" style={{ height: `${h}%`, minHeight: '4px' }} />
+                      </div>
+                      <span className="text-[10px] text-bored-gray-500">{range}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Family Size */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Travel group</h3>
+              <div className="space-y-4">
+                {Object.entries(analytics.familySizes).map(([label, count]) => {
+                  const pct = (count / analytics.totalGuests) * 100;
+                  const icons = label === 'Solo' ? '👤' : label === 'Couple' ? '👫' : label === 'Family (3)' ? '👨‍👩‍👦' : '👨‍👩‍👧‍👦';
+                  return (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="text-xl w-8">{icons}</span>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-bored-black">{label}</span>
+                          <span className="text-xs text-bored-gray-500">{pct.toFixed(0)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-bored-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-bored-black/20 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Interests + Guest LTV + Spend by Country */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Top Interests Heatmap */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8 lg:col-span-1">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Popular interests</h3>
+              <div className="flex flex-wrap gap-2">
+                {analytics.topInterests.map(item => {
+                  const intensity = Math.min(item.percentage / 30, 1);
+                  return (
+                    <div
+                      key={item.interest}
+                      className="px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                      style={{
+                        backgroundColor: `rgba(200, 255, 0, ${0.1 + intensity * 0.4})`,
+                        color: intensity > 0.5 ? '#1a1a1a' : '#6b7280',
+                        fontSize: `${0.75 + intensity * 0.25}rem`,
+                      }}
+                    >
+                      {item.interest}
+                      <span className="ml-1.5 text-[10px] opacity-60">{item.percentage.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Guest Lifetime Value */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Guest lifetime value</h3>
+              <div className="space-y-3">
+                {Object.entries(analytics.ltvTiers).map(([tier, count]) => {
+                  const pct = (count / analytics.totalGuests) * 100;
+                  return (
+                    <div key={tier}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-bored-gray-700">{tier}</span>
+                        <span className="text-xs text-bored-gray-500">{count} guests · {pct.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-2 bg-bored-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Avg Spend by Country */}
+            <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-bored-black mb-6">Avg. spend by country</h3>
+              <div className="space-y-3">
+                {analytics.avgSpendByCountry.map((item, i) => (
+                  <div key={item.country} className="flex items-center gap-3">
+                    <span className="text-xs text-bored-gray-400 w-4 font-medium">{i + 1}</span>
+                    <span className="text-sm font-medium text-bored-black w-20 truncate">{item.country}</span>
+                    <div className="flex-1 h-1.5 bg-bored-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full"
+                        style={{ width: `${(item.avgSpend / analytics.avgSpendByCountry[0].avgSpend) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium text-bored-black w-16 text-right">€{Math.round(item.avgSpend)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Booking Frequency */}
           <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
-            <h3 className="text-lg font-semibold text-bored-black mb-6">Age distribution</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(analytics.ageRanges).map(([range, count]) => {
-                const percentage = ((count / analytics.totalGuests) * 100).toFixed(1);
+            <h3 className="text-lg font-semibold text-bored-black mb-6">Booking frequency distribution</h3>
+            <div className="flex items-end gap-4 h-[180px]">
+              {Object.entries(analytics.bookingBuckets).map(([bucket, count]) => {
+                const maxB = Math.max(...Object.values(analytics.bookingBuckets));
+                const h = (count / maxB) * 100;
+                const pct = ((count / analytics.totalGuests) * 100).toFixed(1);
                 return (
-                  <div key={range} className="p-4 rounded-xl bg-bored-gray-50">
-                    <p className="text-xs text-bored-gray-500 mb-2 uppercase tracking-wide">{range} years</p>
-                    <p className="text-2xl font-light text-bored-black">{percentage}%</p>
+                  <div key={bucket} className="flex-1 flex flex-col items-center gap-2">
+                    <span className="text-xs font-medium text-bored-black">{count}</span>
+                    <div className="w-full flex flex-col items-center" style={{ height: '120px' }}>
+                      <div className="flex-1" />
+                      <div className="w-full bg-gradient-to-t from-violet-500 to-violet-200 rounded-t-lg" style={{ height: `${h}%`, minHeight: '4px' }} />
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[10px] text-bored-gray-500 leading-tight block">{bucket}</span>
+                      <span className="text-[10px] text-bored-gray-400">{pct}%</span>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Booking Patterns */}
+          {/* Guest Status Overview */}
           <div className="bg-white rounded-2xl border border-bored-gray-200 p-8">
-            <h3 className="text-lg font-semibold text-bored-black mb-6">Booking insights</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 rounded-xl bg-gradient-to-br from-bored-gray-50 to-white border border-bored-gray-100">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl">🇺🇸</span>
-                  <div>
-                    <p className="text-xs text-bored-gray-500 uppercase tracking-wide">USA · 40+ years</p>
-                    <p className="text-xl font-light text-bored-black mt-1">{analytics.avgBookingsUSA40Plus.toFixed(1)} avg bookings</p>
+            <h3 className="text-lg font-semibold text-bored-black mb-6">Guest segments overview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {[
+                { label: 'VIP', count: analytics.statusCounts.VIP, color: 'bg-yellow-400', desc: 'High spend + frequent' },
+                { label: 'Top Spenders', count: mockGuests.filter(g => g.tags.includes('Top Guest')).length, color: 'bg-blue-400', desc: '€2,000+ total spend' },
+                { label: 'Repeat', count: mockGuests.filter(g => g.tags.includes('Repeat Guest')).length, color: 'bg-emerald-400', desc: '4+ bookings' },
+                { label: 'New', count: mockGuests.filter(g => g.tags.includes('New')).length, color: 'bg-purple-400', desc: '1-2 bookings' },
+              ].map(seg => (
+                <div key={seg.label} className="p-5 rounded-xl bg-bored-gray-50 border border-bored-gray-100">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`w-3 h-3 rounded-full ${seg.color}`} />
+                    <span className="text-sm font-semibold text-bored-black">{seg.label}</span>
                   </div>
+                  <p className="text-3xl font-light text-bored-black">{seg.count}</p>
+                  <p className="text-xs text-bored-gray-500 mt-1">{seg.desc}</p>
+                  <p className="text-xs text-bored-gray-400 mt-0.5">{((seg.count / analytics.totalGuests) * 100).toFixed(1)}% of total</p>
                 </div>
-                <p className="text-xs text-bored-gray-600">Prefer culture & gastronomy experiences</p>
-              </div>
-
-              <div className="p-6 rounded-xl bg-gradient-to-br from-bored-gray-50 to-white border border-bored-gray-100">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl">🇬🇧</span>
-                  <div>
-                    <p className="text-xs text-bored-gray-500 uppercase tracking-wide">UK · 30-40 years</p>
-                    <p className="text-xl font-light text-bored-black mt-1">6.0 avg bookings</p>
-                  </div>
-                </div>
-                <p className="text-xs text-bored-gray-600">Prefer relaxation & spa treatments</p>
-              </div>
-
-              <div className="p-6 rounded-xl bg-gradient-to-br from-bored-gray-50 to-white border border-bored-gray-100">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl">🇩🇪</span>
-                  <div>
-                    <p className="text-xs text-bored-gray-500 uppercase tracking-wide">Germany · 18-30 years</p>
-                    <p className="text-xl font-light text-bored-black mt-1">3.0 avg bookings</p>
-                  </div>
-                </div>
-                <p className="text-xs text-bored-gray-600">Prefer culture & adventure activities</p>
-              </div>
+              ))}
             </div>
           </div>
         </div>

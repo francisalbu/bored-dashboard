@@ -45,7 +45,7 @@ const mockBookings: BookingItem[] = [
   {
     id: 'BK004',
     experienceName: 'Private Yacht Excursion',
-    category: 'Transfers',
+    category: 'Hotel Activities',
     guestName: 'David Park',
     date: '2026-02-17',
     time: '11:00',
@@ -83,8 +83,8 @@ const mockBookings: BookingItem[] = [
   },
   {
     id: 'BK007',
-    experienceName: 'Helicopter Transfer',
-    category: 'Transfers',
+    experienceName: 'Scenic Coastal Tour',
+    category: 'Hotel Activities',
     guestName: 'Olivia Martinez',
     date: '2026-02-14',
     time: '08:00',

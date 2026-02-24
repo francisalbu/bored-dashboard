@@ -4,12 +4,12 @@ import {
   CalendarDays, 
   Package, 
   DollarSign, 
-  Settings, 
   ChevronDown,
   Star,
   BarChart3,
   Users,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Globe
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
            <NavItem 
             icon={<Package size={18} />} 
             label="Catalog" 
-            active={['activities', 'spa', 'rentals', 'transfers', 'tables', 'packages'].includes(currentView)} 
+            active={['activities', 'spa', 'rentals', 'packages'].includes(currentView)} 
             onClick={() => onNavigate('activities')} // Default to activities
           />
           
@@ -81,8 +81,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
             <SubNavItem label="Hotel Activities" active={currentView === 'activities'} onClick={() => onNavigate('activities')} />
             <SubNavItem label="Spa & Wellness" active={currentView === 'spa'} onClick={() => onNavigate('spa')} />
             <SubNavItem label="Rentals" active={currentView === 'rentals'} onClick={() => onNavigate('rentals')} />
-            <SubNavItem label="Transfers" active={currentView === 'transfers'} onClick={() => onNavigate('transfers')} />
-            <SubNavItem label="Tables" active={currentView === 'tables'} onClick={() => onNavigate('tables')} />
             <SubNavItem label="Packages" active={currentView === 'packages'} onClick={() => onNavigate('packages')} />
           </div>
         </div>
@@ -114,10 +112,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
             <h4 className="text-xs font-semibold text-bored-gray-400 uppercase tracking-wider">Account</h4>
            </div>
           <NavItem 
-            icon={<Settings size={18} />} 
-            label="Business Settings" 
-            active={currentView === 'settings'}
-            onClick={() => onNavigate('settings')}
+            icon={<Globe size={18} />} 
+            label="Site Settings" 
+            active={currentView === 'site_settings'}
+            onClick={() => onNavigate('site_settings')}
           />
         </div>
 

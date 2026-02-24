@@ -7,7 +7,7 @@ export interface BookableUnit {
   currency: string;
   activeDays: AvailabilityDay[];
   instantBooking: boolean;
-  type: 'activity' | 'spa' | 'rental' | 'transfer';
+  type: 'activity' | 'spa' | 'rental';
   imageUrl?: string;
   duration?: string;
 }

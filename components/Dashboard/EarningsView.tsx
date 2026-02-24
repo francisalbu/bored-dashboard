@@ -20,11 +20,10 @@ const payoutHistory = [
 ];
 
 const revenueByCategory = [
-  { category: 'Hotel Activities', amount: 12450, percentage: 38, color: 'bg-blue-500' },
+  { category: 'Hotel Activities', amount: 15450, percentage: 47, color: 'bg-blue-500' },
   { category: 'Spa & Wellness', amount: 9850, percentage: 30, color: 'bg-purple-500' },
-  { category: 'Transfers', amount: 5200, percentage: 16, color: 'bg-green-500' },
-  { category: 'Rentals', amount: 3250, percentage: 10, color: 'bg-orange-500' },
-  { category: 'Dining & Packages', amount: 1950, percentage: 6, color: 'bg-red-500' }
+  { category: 'Rentals', amount: 4250, percentage: 13, color: 'bg-orange-500' },
+  { category: 'Packages', amount: 3150, percentage: 10, color: 'bg-red-500' }
 ];
 
 export const EarningsView: React.FC = () => {

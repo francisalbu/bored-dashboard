@@ -104,11 +104,10 @@ export const AnalyticsView: React.FC = () => {
           </div>
           <div className="space-y-4">
             {[
-              { label: 'Hotel Activities', value: 42, color: 'bg-blue-500' },
+              { label: 'Hotel Activities', value: 47, color: 'bg-blue-500' },
               { label: 'Spa & Wellness', value: 28, color: 'bg-purple-500' },
-              { label: 'Transfers', value: 15, color: 'bg-green-500' },
-              { label: 'Rentals', value: 10, color: 'bg-orange-500' },
-              { label: 'Dining', value: 5, color: 'bg-red-500' }
+              { label: 'Rentals', value: 15, color: 'bg-orange-500' },
+              { label: 'Packages', value: 10, color: 'bg-red-500' }
             ].map((item, index) => (
               <div key={index}>
                 <div className="flex items-center justify-between mb-2">

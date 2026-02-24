@@ -15,7 +15,7 @@ export const HomeView: React.FC = () => {
     },
     {
       id: 'b2',
-      experienceName: 'Private Airport Transfer',
+      experienceName: 'Scenic Coastal Tour',
       date: '26 Jun 2025',
       time: '0:11',
       price: 75.00,
