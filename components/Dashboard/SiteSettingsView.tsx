@@ -101,6 +101,10 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const [experiencesSaving, setExperiencesSaving] = useState(false);
   const [cityFilter, setCityFilter] = useState<string | null>(null);
 
+  // Radius filter
+  const [radiusKm, setRadiusKm] = useState<number>(25);
+  const [radiusPreview, setRadiusPreview] = useState<number>(25); // live slider value before apply
+
   // File upload processing state
   const [fileProcessing, setFileProcessing] = useState<Record<string, boolean>>({});
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -255,6 +259,32 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     setCityFilter(city);
     setExperiences(prev =>
       prev.map(exp => ({ ...exp, is_active: matchesCity(exp, city) }))
+    );
+  };
+
+  // Haversine distance in km between two lat/lng points
+  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const withinRadius = (exp: ExperienceRow, km: number): boolean => {
+    if (!config?.latitude || !config?.longitude) return true; // no hotel coords → show all
+    if (!exp.latitude || !exp.longitude) return true; // no exp coords → include by default
+    return haversineKm(config.latitude, config.longitude, exp.latitude, exp.longitude) <= km;
+  };
+
+  const handleApplyRadius = (km: number) => {
+    setRadiusKm(km);
+    setExperiences(prev =>
+      prev.map(exp => ({ ...exp, is_active: withinRadius(exp, km) }))
     );
   };
 
@@ -930,6 +960,79 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                 </div>
               );
             })()}
+
+            {/* Radius Filter */}
+            {config?.latitude && config?.longitude && (
+              <div className="mb-6 p-4 bg-bored-gray-50 rounded-xl border border-bored-gray-200">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-bored-gray-700 mb-0.5">Radius filter</p>
+                    <p className="text-xs text-bored-gray-400">Show only experiences within a distance from your hotel.</p>
+                  </div>
+                  <button
+                    onClick={() => handleApplyRadius(radiusPreview)}
+                    className="ml-4 flex-shrink-0 px-4 py-2 bg-bored-black text-white rounded-xl text-xs font-semibold hover:bg-bored-gray-800 transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+
+                {/* Slider */}
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-bored-gray-400 w-6">5</span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={150}
+                    step={5}
+                    value={radiusPreview}
+                    onChange={e => setRadiusPreview(Number(e.target.value))}
+                    className="flex-1 h-2 rounded-full accent-bored-black cursor-pointer"
+                  />
+                  <span className="text-xs text-bored-gray-400 w-10 text-right">150km</span>
+                </div>
+
+                {/* Visual feedback bar */}
+                <div className="mt-3">
+                  {(() => {
+                    const total = experiences.length;
+                    const inRadius = experiences.filter(e => withinRadius(e, radiusPreview)).length;
+                    const pct = total > 0 ? Math.round((inRadius / total) * 100) : 0;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold text-bored-gray-700">
+                            {radiusPreview} km radius
+                          </span>
+                          <span className="text-xs text-bored-gray-500">
+                            <span className="font-semibold text-bored-black">{inRadius}</span> of {total} experiences
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-bored-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-200"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: pct > 60 ? '#22c55e' : pct > 30 ? '#f59e0b' : '#ef4444',
+                            }}
+                          />
+                        </div>
+                        {radiusKm !== radiusPreview && (
+                          <p className="mt-1.5 text-xs text-amber-600 font-medium">
+                            ↑ Click <strong>Apply</strong> to activate these {inRadius} experiences.
+                          </p>
+                        )}
+                        {radiusKm === radiusPreview && (
+                          <p className="mt-1.5 text-xs text-emerald-600 font-medium">
+                            ✓ Applied — {inRadius} experiences active within {radiusKm}km. Click <strong>Save Order</strong> to confirm.
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* Stats */}
             {(() => {
