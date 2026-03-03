@@ -73,7 +73,7 @@ const HotelContextBar: React.FC = () => {
 // ─── Inner dashboard — only rendered when auth is confirmed ──────────────────
 const Dashboard: React.FC = () => {
   const { loading, user, activeHotelId, hotels, profile } = useAuth();
-  const [currentView, setCurrentView] = useState('home');
+  const [currentView, setCurrentView] = useState('site-settings');
 
   // Full-screen loader while resolving auth + profile
   if (loading) {
