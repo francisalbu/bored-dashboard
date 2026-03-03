@@ -2,7 +2,11 @@ import React from 'react';
 import { ChevronDown, Star } from 'lucide-react';
 import { Booking, Review } from '../../types';
 
-export const HomeView: React.FC = () => {
+interface HomeViewProps {
+  hotelId: string | null;
+}
+
+export const HomeView: React.FC<HomeViewProps> = ({ hotelId: _hotelId }) => {
   // Mock Data for Bookings
   const recentBookings: Booking[] = [
     {

@@ -3,6 +3,10 @@ import { ChevronLeft, ChevronRight, Clock, Users, X, Calendar } from 'lucide-rea
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export interface CalendarViewProps {
+  hotelId: string | null;
+}
+
 interface CalendarBooking {
   id: string;
   experience: string;
@@ -134,7 +138,7 @@ const statusDot = (s: string) => s === 'confirmed' ? 'bg-emerald-500' : s === 'p
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export const CalendarView: React.FC = () => {
+export const CalendarView: React.FC<CalendarViewProps> = ({ hotelId: _hotelId }) => {
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());

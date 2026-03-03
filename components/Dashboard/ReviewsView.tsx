@@ -2,7 +2,11 @@ import React from 'react';
 import { Search, SlidersHorizontal, Star } from 'lucide-react';
 import { Review } from '../../types';
 
-export const ReviewsView: React.FC = () => {
+interface ReviewsViewProps {
+  hotelId: string | null;
+}
+
+export const ReviewsView: React.FC<ReviewsViewProps> = ({ hotelId: _hotelId }) => {
   // Mock Data for Reviews
   const reviews: Review[] = [
     {

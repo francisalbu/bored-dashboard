@@ -46,14 +46,14 @@ import {
 } from '../../lib/hotelConfigTypes';
 import {
   fetchHotelConfig,
-  fetchAllHotelConfigs,
   saveHotelConfig,
 } from '../../lib/hotelConfigService';
+import { useAuth } from '../../lib/authContext';
 import {
   ExperienceRow,
-  fetchAllExperiences,
-  toggleExperienceActive,
-  updateExperienceOrder,
+  fetchHotelExperiencesOrdered,
+  toggleHotelExperienceActive,
+  updateHotelExperienceOrder,
 } from '../../lib/experienceService';
 import { extractTextFromFile, hasOpenAIKey } from '../../lib/fileExtractor';
 
@@ -75,9 +75,20 @@ const PREVIEW_CARDS = [
 
 type Section = 'branding' | 'content' | 'features' | 'experiences' | 'ai-bot' | 'staff';
 
-export const SiteSettingsView: React.FC = () => {
-  const [hotelIds, setHotelIds] = useState<{ id: string; name: string }[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = useState<string>('vila-gale');
+interface SiteSettingsViewProps {
+  /** Hotel id from auth context — if provided, skips the in-page hotel selector */
+  activeHotelId?: string | null;
+}
+
+export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelId }) => {
+  const { hotels: authHotels } = useAuth();
+
+  // Only show hotels this user actually has access to (from auth context)
+  const hotelIds = authHotels.map(h => ({ id: h.id, name: h.name }));
+
+  const [selectedHotelId, setSelectedHotelId] = useState<string>(
+    activeHotelId || authHotels[0]?.id || ''
+  );
   const [config, setConfig] = useState<HotelConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,6 +99,7 @@ export const SiteSettingsView: React.FC = () => {
   const [experiences, setExperiences] = useState<ExperienceRow[]>([]);
   const [experiencesLoading, setExperiencesLoading] = useState(false);
   const [experiencesSaving, setExperiencesSaving] = useState(false);
+  const [cityFilter, setCityFilter] = useState<string | null>(null);
 
   // File upload processing state
   const [fileProcessing, setFileProcessing] = useState<Record<string, boolean>>({});
@@ -95,17 +107,17 @@ export const SiteSettingsView: React.FC = () => {
   const [pendingUploads, setPendingUploads] = useState<KnowledgeEntry[]>([]);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
-  // Load all hotels for the selector
+  // Sync selectedHotelId when the prop changes
   useEffect(() => {
-    async function loadHotels() {
-      const configs = await fetchAllHotelConfigs();
-      setHotelIds(configs.map(c => ({ id: c.id, name: c.name })));
-      if (configs.length > 0 && !configs.find(c => c.id === selectedHotelId)) {
-        setSelectedHotelId(configs[0].id);
-      }
+    if (activeHotelId) setSelectedHotelId(activeHotelId);
+  }, [activeHotelId]);
+
+  // Once authHotels loads (async), make sure selectedHotelId is valid
+  useEffect(() => {
+    if (!selectedHotelId && authHotels.length > 0) {
+      setSelectedHotelId(activeHotelId || authHotels[0].id);
     }
-    loadHotels();
-  }, []);
+  }, [authHotels]);
 
   // Load selected hotel config
   useEffect(() => {
@@ -124,6 +136,7 @@ export const SiteSettingsView: React.FC = () => {
           conciergeAvatarUrl: '',
           latitude: null,
           longitude: null,
+          subdomain: null,
           theme: { ...DEFAULT_THEME },
           staffMembers: [],
           activityPreferences: { style: 'mixed' },
@@ -139,16 +152,44 @@ export const SiteSettingsView: React.FC = () => {
     loadConfig();
   }, [selectedHotelId]);
 
-  // Load experiences
+  // Load experiences ordered by this hotel's per-hotel display_order
   useEffect(() => {
+    if (!selectedHotelId) return;
     async function loadExperiences() {
       setExperiencesLoading(true);
-      const data = await fetchAllExperiences();
+      const data = await fetchHotelExperiencesOrdered(selectedHotelId);
       setExperiences(data);
+
+      // Auto-detect which city was previously saved by finding the city
+      // whose experiences are mostly active
+      const CITY_ALIASES_STATIC: Record<string, string[]> = {
+        'Lisboa':           ['lisbon', 'lisboa'],
+        'Porto':            ['porto', 'oporto'],
+        'Lagos':            ['lagos'],
+        'Viana do Castelo': ['viana', 'viana do castelo'],
+        'Funchal':          ['funchal'],
+      };
+      const activeExps = data.filter(e => e.is_active);
+      if (activeExps.length > 0) {
+        let bestCity: string | null = null;
+        let bestCount = 0;
+        for (const [city, aliases] of Object.entries(CITY_ALIASES_STATIC)) {
+          const count = activeExps.filter(e => {
+            const haystack = [(e.city ?? ''), (e.location ?? '')].join(' ').toLowerCase();
+            return aliases.some(a => haystack.includes(a));
+          }).length;
+          if (count > bestCount) { bestCount = count; bestCity = city; }
+        }
+        // Only set if the dominant city covers at least 50% of active experiences
+        if (bestCity && bestCount >= activeExps.length * 0.5) {
+          setCityFilter(bestCity);
+        }
+      }
+
       setExperiencesLoading(false);
     }
     loadExperiences();
-  }, []);
+  }, [selectedHotelId]);
 
   const handleSave = async () => {
     if (!config) return;
@@ -161,25 +202,60 @@ export const SiteSettingsView: React.FC = () => {
   };
 
   const handleSaveExperienceOrder = async () => {
+    if (!selectedHotelId) return;
     setExperiencesSaving(true);
     const orderedIds = experiences.map((exp, index) => ({
-      id: exp.id,
+      experienceId: exp.id,
       display_order: index + 1,
+      is_active: exp.is_active,
     }));
-    await updateExperienceOrder(orderedIds);
+    const result = await updateHotelExperienceOrder(selectedHotelId, orderedIds);
     setExperiencesSaving(false);
+    if (!result.success) {
+      console.error('Failed to save experience order:', result.error);
+    }
   };
 
   const handleToggleExperience = async (id: number, currentActive: boolean) => {
+    if (!selectedHotelId) return;
+    const newActive = !currentActive;
+    // Optimistic update
     setExperiences(prev =>
-      prev.map(exp => (exp.id === id ? { ...exp, is_active: !currentActive } : exp))
+      prev.map(exp => (exp.id === id ? { ...exp, is_active: newActive } : exp))
     );
-    const result = await toggleExperienceActive(id, !currentActive);
+    const result = await toggleHotelExperienceActive(selectedHotelId, id, newActive);
     if (!result.success) {
+      // Revert on failure
       setExperiences(prev =>
         prev.map(exp => (exp.id === id ? { ...exp, is_active: currentActive } : exp))
       );
     }
+  };
+
+  // Activate all experiences from a city, deactivate the rest
+  // CITY_ALIASES: display label → all possible values in the DB (EN + PT)
+  const CITY_ALIASES: Record<string, string[]> = {
+    'Lisboa':           ['lisbon', 'lisboa'],
+    'Porto':            ['porto', 'oporto'],
+    'Lagos':            ['lagos'],
+    'Viana do Castelo': ['viana', 'viana do castelo'],
+    'Funchal':          ['funchal'],
+  };
+
+  const matchesCity = (exp: ExperienceRow, city: string): boolean => {
+    const aliases = CITY_ALIASES[city] ?? [city.toLowerCase()];
+    const haystack = [
+      exp.city?.toLowerCase() ?? '',
+      exp.location?.toLowerCase() ?? '',
+    ].join(' ');
+    return aliases.some(alias => haystack.includes(alias));
+  };
+
+  const handleCitySelect = (city: string) => {
+    setCityFilter(city);
+    setExperiences(prev =>
+      prev.map(exp => ({ ...exp, is_active: matchesCity(exp, city) }))
+    );
   };
 
   // Drag-and-drop state
@@ -821,33 +897,89 @@ export const SiteSettingsView: React.FC = () => {
               </button>
             </div>
 
+            {/* City selector — picks the hotel's city and bulk-activates experiences */}
+            {(() => {
+              const CITIES = ['Lisboa', 'Porto', 'Lagos', 'Viana do Castelo', 'Funchal'];
+              const cityCount = (city: string) =>
+                experiences.filter(e => matchesCity(e, city)).length;
+              return (
+                <div className="mt-5 mb-6 p-4 bg-bored-gray-50 rounded-xl border border-bored-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-bored-gray-700 mb-0.5">Hotel city</p>
+                      <p className="text-xs text-bored-gray-400">Choose a city to automatically activate its experiences and hide the rest.</p>
+                    </div>
+                    <select
+                      value={cityFilter || ''}
+                      onChange={e => e.target.value ? handleCitySelect(e.target.value) : setCityFilter(null)}
+                      className="ml-4 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-52 flex-shrink-0"
+                    >
+                      <option value="">— Select city —</option>
+                      {CITIES.filter(c => cityCount(c) > 0).map(city => (
+                        <option key={city} value={city}>
+                          {city} ({cityCount(city)} experiences)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {cityFilter && (
+                    <p className="mt-2 text-xs text-emerald-600 font-medium">
+                      ✓ Showing {cityFilter} — {experiences.filter(e => e.is_active).length} active, {experiences.filter(e => !e.is_active).length} hidden. Click <strong>Save Order</strong> to confirm.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Stats */}
-            <div className="flex gap-4 mt-4 mb-6">
-              <div className="px-4 py-2 bg-emerald-50 rounded-lg">
-                <span className="text-sm font-medium text-emerald-700">
-                  {experiences.filter(e => e.is_active).length} visible
-                </span>
-              </div>
-              <div className="px-4 py-2 bg-slate-50 rounded-lg">
-                <span className="text-sm font-medium text-slate-500">
-                  {experiences.filter(e => !e.is_active).length} hidden
-                </span>
-              </div>
-              <div className="px-4 py-2 bg-slate-50 rounded-lg">
-                <span className="text-sm font-medium text-slate-500">
-                  {experiences.length} total
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const visible = cityFilter
+                ? experiences.filter(e => matchesCity(e, cityFilter) && e.is_active).length
+                : experiences.filter(e => e.is_active).length;
+              const hidden = cityFilter
+                ? experiences.filter(e => matchesCity(e, cityFilter) && !e.is_active).length
+                : experiences.filter(e => !e.is_active).length;
+              const total = cityFilter
+                ? experiences.filter(e => matchesCity(e, cityFilter)).length
+                : experiences.length;
+              return (
+                <div className="flex gap-4 mb-6">
+                  <div className="px-4 py-2 bg-emerald-50 rounded-lg">
+                    <span className="text-sm font-medium text-emerald-700">{visible} visible</span>
+                  </div>
+                  <div className="px-4 py-2 bg-slate-50 rounded-lg">
+                    <span className="text-sm font-medium text-slate-500">{hidden} hidden</span>
+                  </div>
+                  <div className="px-4 py-2 bg-slate-50 rounded-lg">
+                    <span className="text-sm font-medium text-slate-500">
+                      {total}{cityFilter ? ` in ${cityFilter}` : ' total'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {experiencesLoading ? (
               <div className="flex items-center justify-center py-12 text-bored-gray-500">
                 <Loader2 size={24} className="animate-spin mr-2" />
                 Loading experiences...
               </div>
+            ) : experiences.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-bored-gray-100 flex items-center justify-center mb-4">
+                  <Package size={28} className="text-bored-gray-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-bored-black mb-1">No experiences in your catalog yet</h3>
+                <p className="text-xs text-bored-gray-400 max-w-xs">
+                  Go to <strong>Catalog</strong> to add experiences from the marketplace to this hotel's catalog. Once added, you can reorder and toggle their visibility here.
+                </p>
+              </div>
             ) : (
               <div className="space-y-2">
-                {experiences.map((exp, index) => (
+                {(cityFilter
+                  ? experiences.filter(e => matchesCity(e, cityFilter))
+                  : experiences
+                ).map((exp, index) => (
                   <div
                     key={exp.id}
                     draggable

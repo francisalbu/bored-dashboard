@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { TrendingUp, DollarSign, Calendar, Download, ChevronDown } from 'lucide-react';
 import { EarningsData } from '../../types';
 
+interface EarningsViewProps {
+  hotelId: string | null;
+}
+
 const mockEarningsData: EarningsData[] = [
   { period: 'January 2026', revenue: 18500, bookings: 245, averageValue: 75.51 },
   { period: 'February 2026', revenue: 20200, bookings: 268, averageValue: 75.37 },
@@ -26,7 +30,7 @@ const revenueByCategory = [
   { category: 'Packages', amount: 3150, percentage: 10, color: 'bg-red-500' }
 ];
 
-export const EarningsView: React.FC = () => {
+export const EarningsView: React.FC<EarningsViewProps> = ({ hotelId: _hotelId }) => {
   const [selectedPeriod, setSelectedPeriod] = useState('This Month');
   const currentMonthData = mockEarningsData[mockEarningsData.length - 1];
   const previousMonthData = mockEarningsData[mockEarningsData.length - 2];

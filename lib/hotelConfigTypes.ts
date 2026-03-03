@@ -80,6 +80,7 @@ export interface HotelConfig {
   conciergeAvatarUrl: string;
   latitude: number | null;
   longitude: number | null;
+  subdomain: string | null;         // e.g. 'flordesal' → flordesal.boredtourist.com
   theme: HotelTheme;
   staffMembers: StaffMember[];
   activityPreferences: ActivityPreferences;
@@ -106,6 +107,7 @@ export interface HotelConfigRow {
   concierge_avatar_url: string;
   latitude: number | null;
   longitude: number | null;
+  subdomain: string | null;
   theme: HotelTheme;
   staff_members: StaffMember[];
   activity_preferences: ActivityPreferences;
@@ -133,6 +135,7 @@ export function rowToConfig(row: HotelConfigRow): HotelConfig {
     conciergeAvatarUrl: row.concierge_avatar_url || '',
     latitude: row.latitude,
     longitude: row.longitude,
+    subdomain: row.subdomain || null,
     theme: row.theme,
     staffMembers: row.staff_members || [],
     activityPreferences: row.activity_preferences || { style: 'mixed' },
@@ -145,7 +148,7 @@ export function rowToConfig(row: HotelConfigRow): HotelConfig {
   };
 }
 
-export function configToRow(config: HotelConfig): Omit<HotelConfigRow, 'created_at' | 'updated_at'> {
+export function configToRow(config: HotelConfig): Omit<HotelConfigRow, 'created_at' | 'updated_at' | 'subdomain'> {
   return {
     id: config.id,
     name: config.name,

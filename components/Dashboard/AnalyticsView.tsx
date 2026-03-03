@@ -2,6 +2,10 @@ import React from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Calendar, Users, Package } from 'lucide-react';
 import { AnalyticsMetric, ChartDataPoint } from '../../types';
 
+interface AnalyticsViewProps {
+  hotelId: string | null;
+}
+
 const mockMetrics: AnalyticsMetric[] = [
   { label: 'Total Revenue', value: '€24,580', change: 12.5, trend: 'up' },
   { label: 'Bookings', value: '342', change: 8.2, trend: 'up' },
@@ -27,7 +31,7 @@ const topExperiences = [
   { name: 'Cooking Class', bookings: 28, revenue: 2380, imageUrl: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400' }
 ];
 
-export const AnalyticsView: React.FC = () => {
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ hotelId: _hotelId }) => {
   const maxRevenue = Math.max(...revenueData.map(d => d.value));
 
   return (

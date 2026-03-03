@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Search, Plus, Star, TrendingUp, Calendar, DollarSign, Sparkles, User, Globe, Users, BarChart3, ArrowUpRight, Filter } from 'lucide-react';
 
+export interface GuestsViewProps {
+  hotelId: string | null;
+}
+
 interface Guest {
   id: string;
   name: string;
@@ -256,7 +260,7 @@ const calculateAnalytics = () => {
   };
 };
 
-export const GuestsView: React.FC = () => {
+export const GuestsView: React.FC<GuestsViewProps> = ({ hotelId: _hotelId }) => {
   const [selectedTab, setSelectedTab] = useState<'all' | 'repeat' | 'top' | 'analytics'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);

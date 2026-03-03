@@ -11,7 +11,6 @@ import {
   Star,
   Globe,
   Loader2,
-  Save,
   Trash2,
   ArrowLeft,
   CheckCircle,
@@ -32,6 +31,8 @@ import {
   GripVertical,
   Sparkles,
   FileText,
+  Share2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ExperienceRow,
@@ -39,17 +40,23 @@ import {
   BLANK_EXPERIENCE,
   fetchAllExperiences,
   fetchExperiencesByCategory,
+  fetchHotelCatalogIds,
+  addExperienceToHotelCatalog,
+  removeExperienceFromHotelCatalog,
   createExperience,
   updateExperience,
   deleteExperience,
   toggleExperienceActive,
 } from '../../lib/experienceService';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/authContext';
 import { BulkUploadModal } from './BulkUploadModal';
+import { ViatorImportModal } from './ViatorImportModal';
 import { generateExperienceFields } from '../../lib/aiDescriptionService';
 
 // ─────────────────────────────────────────────────────────────────────────────
-const HOTEL_OPERATOR_ID = 39;
+// operator_id for demo mock data — replaced by the auth-derived id at runtime
+const DEMO_OPERATOR_ID = 39;
 
 // Map catalog section names to Supabase category values
 const SECTION_TO_CATEGORY: Record<string, string> = {
@@ -69,24 +76,24 @@ const now = new Date().toISOString();
 
 // ─── Hotel Mock Catalog ──────────────────────────────────────────────────────
 const HOTEL_SPA: ExperienceRow[] = [
-  { id: 90001, operator_id: HOTEL_OPERATOR_ID, title: 'Satsanga Relaxing Massage', description: 'A deeply relaxing full-body massage using warm essential oils. Our therapists use long, flowing strokes to release tension and promote total relaxation.', short_description: 'Full-body relaxation massage with warm essential oils', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 75, currency: 'EUR', duration: '50min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Massage', 'Relaxation', 'Wellness'], video_url: null, image_url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=80', images: ['https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=80', 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80'], provider_logo: null, highlights: ['50-minute session', 'Warm essential oils', 'Professional therapist', 'Deep relaxation technique'], included: ['Robe & slippers', 'Herbal tea after treatment', 'Access to thermal circuit'], what_to_bring: null, languages: ['Portuguese', 'English', 'Spanish'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Arrive 15 minutes before your appointment.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.8, review_count: 124, view_count: 890, display_order: 1, created_at: now, updated_at: now },
-  { id: 90002, operator_id: HOTEL_OPERATOR_ID, title: 'Hot Stone Therapy', description: 'Heated basalt stones placed on key energy points and used as massage tools to melt away deep muscle tension.', short_description: 'Deep therapeutic massage with heated basalt stones', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 95, currency: 'EUR', duration: '60min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Hot Stones', 'Deep Tissue', 'Therapy'], video_url: null, image_url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=800&q=80', images: ['https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=800&q=80'], provider_logo: null, highlights: ['60-minute treatment', 'Heated basalt stones', 'Targets deep muscle tension', 'Improves circulation'], included: ['Robe & slippers', 'Herbal tea', 'Thermal circuit access'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Not recommended during pregnancy.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.9, review_count: 87, view_count: 620, display_order: 2, created_at: now, updated_at: now },
-  { id: 90003, operator_id: HOTEL_OPERATOR_ID, title: 'Couples Ritual — Algarve Sunset', description: 'A romantic spa experience for two. Begin with a private thermal circuit, followed by a side-by-side full-body massage, and finish with sparkling wine.', short_description: 'Romantic spa experience for two with massage & sparkling wine', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 190, currency: 'EUR', duration: '1h30', max_group_size: 2, category: 'Spa & Wellness', tags: ['Couples', 'Romantic', 'Premium'], video_url: null, image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbec6f?w=800&q=80', images: ['https://images.unsplash.com/photo-1540555700478-4be289fbec6f?w=800&q=80', 'https://images.unsplash.com/photo-1596178060810-72f53ce9a65c?w=800&q=80'], provider_logo: null, highlights: ['90-minute experience', 'Private suite for two', 'Side-by-side massage', 'Sparkling wine & fruit'], included: ['Private thermal circuit', 'Full-body massage x2', 'Sparkling wine & fruit', 'Robes & slippers'], what_to_bring: null, languages: ['Portuguese', 'English', 'French'], cancellation_policy: 'Free cancellation up to 24 hours before', important_info: 'Please book at least 24 hours in advance.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 56, view_count: 1200, display_order: 3, created_at: now, updated_at: now },
-  { id: 90004, operator_id: HOTEL_OPERATOR_ID, title: 'Hydra-Glow Facial Treatment', description: 'A rejuvenating facial using marine collagen and hyaluronic acid serums.', short_description: 'Rejuvenating facial with marine collagen & hyaluronic acid', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 65, currency: 'EUR', duration: '45min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Facial', 'Skincare'], video_url: null, image_url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=80', images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=80'], provider_logo: null, highlights: ['45-minute treatment', 'Marine collagen serums', 'Deep cleansing'], included: ['Skin analysis', 'Full treatment'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Please arrive without makeup.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.7, review_count: 43, view_count: 340, display_order: 4, created_at: now, updated_at: now },
-  { id: 90005, operator_id: HOTEL_OPERATOR_ID, title: 'Thermal Circuit — Day Pass', description: 'Full access to heated pool, sauna, Turkish bath, jacuzzi, experience showers, and ice fountain.', short_description: 'Full-day access to heated pool, sauna, Turkish bath & jacuzzi', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 25, currency: 'EUR', duration: '3h', max_group_size: null, category: 'Spa & Wellness', tags: ['Thermal', 'Sauna', 'Pool'], video_url: null, image_url: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80', images: ['https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80'], provider_logo: null, highlights: ['3-hour access', 'Heated indoor pool', 'Sauna & Turkish bath', 'Jacuzzi'], included: ['Robe & slippers', 'Towel', 'Locker'], what_to_bring: ['Swimsuit'], languages: ['Portuguese', 'English', 'Spanish', 'French', 'German'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Swimsuit required. Children under 16 not allowed.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.6, review_count: 312, view_count: 2100, display_order: 5, created_at: now, updated_at: now },
-  { id: 90006, operator_id: HOTEL_OPERATOR_ID, title: 'Ayurvedic Abhyanga Massage', description: 'Traditional Ayurvedic warm oil massage using synchronized two-hand technique.', short_description: 'Traditional warm oil Ayurvedic full-body massage', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 85, currency: 'EUR', duration: '55min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Ayurveda', 'Massage'], video_url: null, image_url: 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80', images: ['https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80'], provider_logo: null, highlights: ['55-minute session', 'Warm Ayurvedic oils', 'Synchronized technique'], included: ['Robe & slippers', 'Herbal tea', 'Thermal circuit access'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Oil-based treatment.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.8, review_count: 67, view_count: 450, display_order: 6, created_at: now, updated_at: now },
+  { id: 90001, operator_id: DEMO_OPERATOR_ID, title: 'Satsanga Relaxing Massage', description: 'A deeply relaxing full-body massage using warm essential oils. Our therapists use long, flowing strokes to release tension and promote total relaxation.', short_description: 'Full-body relaxation massage with warm essential oils', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 75, currency: 'EUR', duration: '50min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Massage', 'Relaxation', 'Wellness'], video_url: null, image_url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=80', images: ['https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=80', 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80'], provider_logo: null, highlights: ['50-minute session', 'Warm essential oils', 'Professional therapist', 'Deep relaxation technique'], included: ['Robe & slippers', 'Herbal tea after treatment', 'Access to thermal circuit'], what_to_bring: null, languages: ['Portuguese', 'English', 'Spanish'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Arrive 15 minutes before your appointment.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.8, review_count: 124, view_count: 890, display_order: 1, created_at: now, updated_at: now },
+  { id: 90002, operator_id: DEMO_OPERATOR_ID, title: 'Hot Stone Therapy', description: 'Heated basalt stones placed on key energy points and used as massage tools to melt away deep muscle tension.', short_description: 'Deep therapeutic massage with heated basalt stones', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 95, currency: 'EUR', duration: '60min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Hot Stones', 'Deep Tissue', 'Therapy'], video_url: null, image_url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=800&q=80', images: ['https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=800&q=80'], provider_logo: null, highlights: ['60-minute treatment', 'Heated basalt stones', 'Targets deep muscle tension', 'Improves circulation'], included: ['Robe & slippers', 'Herbal tea', 'Thermal circuit access'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Not recommended during pregnancy.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.9, review_count: 87, view_count: 620, display_order: 2, created_at: now, updated_at: now },
+  { id: 90003, operator_id: DEMO_OPERATOR_ID, title: 'Couples Ritual — Algarve Sunset', description: 'A romantic spa experience for two. Begin with a private thermal circuit, followed by a side-by-side full-body massage, and finish with sparkling wine.', short_description: 'Romantic spa experience for two with massage & sparkling wine', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos, Meia Praia, Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 190, currency: 'EUR', duration: '1h30', max_group_size: 2, category: 'Spa & Wellness', tags: ['Couples', 'Romantic', 'Premium'], video_url: null, image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbec6f?w=800&q=80', images: ['https://images.unsplash.com/photo-1540555700478-4be289fbec6f?w=800&q=80', 'https://images.unsplash.com/photo-1596178060810-72f53ce9a65c?w=800&q=80'], provider_logo: null, highlights: ['90-minute experience', 'Private suite for two', 'Side-by-side massage', 'Sparkling wine & fruit'], included: ['Private thermal circuit', 'Full-body massage x2', 'Sparkling wine & fruit', 'Robes & slippers'], what_to_bring: null, languages: ['Portuguese', 'English', 'French'], cancellation_policy: 'Free cancellation up to 24 hours before', important_info: 'Please book at least 24 hours in advance.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 56, view_count: 1200, display_order: 3, created_at: now, updated_at: now },
+  { id: 90004, operator_id: DEMO_OPERATOR_ID, title: 'Hydra-Glow Facial Treatment', description: 'A rejuvenating facial using marine collagen and hyaluronic acid serums.', short_description: 'Rejuvenating facial with marine collagen & hyaluronic acid', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 65, currency: 'EUR', duration: '45min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Facial', 'Skincare'], video_url: null, image_url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=80', images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=80'], provider_logo: null, highlights: ['45-minute treatment', 'Marine collagen serums', 'Deep cleansing'], included: ['Skin analysis', 'Full treatment'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Please arrive without makeup.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.7, review_count: 43, view_count: 340, display_order: 4, created_at: now, updated_at: now },
+  { id: 90005, operator_id: DEMO_OPERATOR_ID, title: 'Thermal Circuit — Day Pass', description: 'Full access to heated pool, sauna, Turkish bath, jacuzzi, experience showers, and ice fountain.', short_description: 'Full-day access to heated pool, sauna, Turkish bath & jacuzzi', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 25, currency: 'EUR', duration: '3h', max_group_size: null, category: 'Spa & Wellness', tags: ['Thermal', 'Sauna', 'Pool'], video_url: null, image_url: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80', images: ['https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80'], provider_logo: null, highlights: ['3-hour access', 'Heated indoor pool', 'Sauna & Turkish bath', 'Jacuzzi'], included: ['Robe & slippers', 'Towel', 'Locker'], what_to_bring: ['Swimsuit'], languages: ['Portuguese', 'English', 'Spanish', 'French', 'German'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Swimsuit required. Children under 16 not allowed.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.6, review_count: 312, view_count: 2100, display_order: 5, created_at: now, updated_at: now },
+  { id: 90006, operator_id: DEMO_OPERATOR_ID, title: 'Ayurvedic Abhyanga Massage', description: 'Traditional Ayurvedic warm oil massage using synchronized two-hand technique.', short_description: 'Traditional warm oil Ayurvedic full-body massage', location: 'Satsanga Spa & Wellness', address: 'Vila Galé Lagos', meeting_point: 'Spa Reception, Floor -1', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 85, currency: 'EUR', duration: '55min', max_group_size: 1, category: 'Spa & Wellness', tags: ['Ayurveda', 'Massage'], video_url: null, image_url: 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80', images: ['https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=800&q=80'], provider_logo: null, highlights: ['55-minute session', 'Warm Ayurvedic oils', 'Synchronized technique'], included: ['Robe & slippers', 'Herbal tea', 'Thermal circuit access'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 4 hours before', important_info: 'Oil-based treatment.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.8, review_count: 67, view_count: 450, display_order: 6, created_at: now, updated_at: now },
 ];
 
 const HOTEL_RENTALS: ExperienceRow[] = [
-  { id: 91001, operator_id: HOTEL_OPERATOR_ID, title: 'Beach Umbrella & Sunbeds', description: 'Reserve your spot on Meia Praia beach with a premium umbrella and two comfortable sunbeds.', short_description: 'Premium umbrella + 2 sunbeds on Meia Praia', location: 'Meia Praia Beach', address: 'Praia da Meia Praia, Lagos', meeting_point: 'Beach Club entrance', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 25, currency: 'EUR', duration: 'Full day', max_group_size: 2, category: 'Rentals', tags: ['Beach', 'Sunbeds'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80'], provider_logo: null, highlights: ['Full-day rental', 'Premium location', 'Towel service'], included: ['Umbrella', '2 sunbeds', 'Beach towels'], what_to_bring: ['Sunscreen'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Subject to availability.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.5, review_count: 89, view_count: 600, display_order: 1, created_at: now, updated_at: now },
-  { id: 91002, operator_id: HOTEL_OPERATOR_ID, title: 'E-Bike Rental', description: 'Explore Lagos and the Algarve coast on our premium electric bikes. GPS included.', short_description: 'Electric bike with GPS and suggested coastal routes', location: 'Hotel Lobby', address: 'Vila Galé Lagos', meeting_point: 'Concierge Desk', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 35, currency: 'EUR', duration: '4h', max_group_size: 1, category: 'Rentals', tags: ['E-Bike', 'Cycling'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1571068316344-75bc76f77890?w=800&q=80'], provider_logo: null, highlights: ['4-hour rental', 'GPS with routes', 'Helmet included'], included: ['E-bike', 'Helmet', 'GPS', 'Lock'], what_to_bring: ['Comfortable clothing'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Must be 16+.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.7, review_count: 45, view_count: 380, display_order: 2, created_at: now, updated_at: now },
-  { id: 91003, operator_id: HOTEL_OPERATOR_ID, title: 'Stand-Up Paddleboard', description: 'Rent a premium SUP board and explore the crystal-clear waters of the Algarve coast.', short_description: 'SUP board rental along the Algarve coastline', location: 'Meia Praia Beach', address: 'Beach Club, Meia Praia', meeting_point: 'Beach Club Water Sports', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 20, currency: 'EUR', duration: '2h', max_group_size: 1, category: 'Rentals', tags: ['SUP', 'Water Sports'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1526188717906-ab4a2f949f48?w=800&q=80'], provider_logo: null, highlights: ['2-hour rental', 'Premium board', 'Life jacket included'], included: ['SUP board', 'Paddle', 'Life jacket'], what_to_bring: ['Swimsuit', 'Sunscreen'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 1 hour before', important_info: 'Weather dependent.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.6, review_count: 32, view_count: 280, display_order: 3, created_at: now, updated_at: now },
+  { id: 91001, operator_id: DEMO_OPERATOR_ID, title: 'Beach Umbrella & Sunbeds', description: 'Reserve your spot on Meia Praia beach with a premium umbrella and two comfortable sunbeds.', short_description: 'Premium umbrella + 2 sunbeds on Meia Praia', location: 'Meia Praia Beach', address: 'Praia da Meia Praia, Lagos', meeting_point: 'Beach Club entrance', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 25, currency: 'EUR', duration: 'Full day', max_group_size: 2, category: 'Rentals', tags: ['Beach', 'Sunbeds'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80'], provider_logo: null, highlights: ['Full-day rental', 'Premium location', 'Towel service'], included: ['Umbrella', '2 sunbeds', 'Beach towels'], what_to_bring: ['Sunscreen'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Subject to availability.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.5, review_count: 89, view_count: 600, display_order: 1, created_at: now, updated_at: now },
+  { id: 91002, operator_id: DEMO_OPERATOR_ID, title: 'E-Bike Rental', description: 'Explore Lagos and the Algarve coast on our premium electric bikes. GPS included.', short_description: 'Electric bike with GPS and suggested coastal routes', location: 'Hotel Lobby', address: 'Vila Galé Lagos', meeting_point: 'Concierge Desk', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 35, currency: 'EUR', duration: '4h', max_group_size: 1, category: 'Rentals', tags: ['E-Bike', 'Cycling'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1571068316344-75bc76f77890?w=800&q=80'], provider_logo: null, highlights: ['4-hour rental', 'GPS with routes', 'Helmet included'], included: ['E-bike', 'Helmet', 'GPS', 'Lock'], what_to_bring: ['Comfortable clothing'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 2 hours before', important_info: 'Must be 16+.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.7, review_count: 45, view_count: 380, display_order: 2, created_at: now, updated_at: now },
+  { id: 91003, operator_id: DEMO_OPERATOR_ID, title: 'Stand-Up Paddleboard', description: 'Rent a premium SUP board and explore the crystal-clear waters of the Algarve coast.', short_description: 'SUP board rental along the Algarve coastline', location: 'Meia Praia Beach', address: 'Beach Club, Meia Praia', meeting_point: 'Beach Club Water Sports', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 20, currency: 'EUR', duration: '2h', max_group_size: 1, category: 'Rentals', tags: ['SUP', 'Water Sports'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1526188717906-ab4a2f949f48?w=800&q=80'], provider_logo: null, highlights: ['2-hour rental', 'Premium board', 'Life jacket included'], included: ['SUP board', 'Paddle', 'Life jacket'], what_to_bring: ['Swimsuit', 'Sunscreen'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 1 hour before', important_info: 'Weather dependent.', instant_booking: true, available_today: true, verified: true, is_active: true, rating: 4.6, review_count: 32, view_count: 280, display_order: 3, created_at: now, updated_at: now },
 ];
 
 const HOTEL_PACKAGES: ExperienceRow[] = [
-  { id: 94001, operator_id: HOTEL_OPERATOR_ID, title: 'Romantic Getaway Package', description: 'The perfect romantic escape: 2-night stay in a sea-view suite, couples spa ritual, private beach dinner, and champagne on arrival.', short_description: '2 nights + couples spa + beach dinner + champagne', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Hotel Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 450, currency: 'EUR', duration: '2 nights', max_group_size: 2, category: 'Packages', tags: ['Romantic', 'Couples', 'Premium'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&q=80'], provider_logo: null, highlights: ['2-night sea-view suite', 'Couples spa ritual', 'Private beach dinner', 'Champagne on arrival'], included: ['Accommodation', 'Couples spa', 'Beach dinner', 'Champagne', 'Breakfast'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 7 days before', important_info: 'Subject to availability.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 34, view_count: 1200, display_order: 1, created_at: now, updated_at: now },
-  { id: 94002, operator_id: HOTEL_OPERATOR_ID, title: 'Adventure Week Package', description: 'A week of experiences: 5-night stay, daily breakfast, 3 activities, airport transfers, and a welcome drink.', short_description: '5 nights + 3 activities + transfers + breakfast', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Hotel Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 890, currency: 'EUR', duration: '5 nights', max_group_size: 2, category: 'Packages', tags: ['Adventure', 'Activities', 'Week'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=800&q=80'], provider_logo: null, highlights: ['5-night stay', '3 activities included', 'Airport transfers', 'Daily breakfast'], included: ['Accommodation', '3 activities', 'Airport transfers', 'Breakfast', 'Welcome drink'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 14 days before', important_info: 'Activities subject to availability.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.8, review_count: 18, view_count: 780, display_order: 2, created_at: now, updated_at: now },
-  { id: 94003, operator_id: HOTEL_OPERATOR_ID, title: 'Wellness Retreat — 3 Days', description: 'A 3-day wellness immersion: daily yoga, 2 spa treatments, thermal circuit, healthy breakfast, and nutrition consultation.', short_description: '3-day wellness immersion with yoga, spa & nutrition', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Spa Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 380, currency: 'EUR', duration: '3 days', max_group_size: 1, category: 'Packages', tags: ['Wellness', 'Yoga', 'Spa'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&q=80'], provider_logo: null, highlights: ['Daily yoga sessions', '2 spa treatments', 'Thermal circuit', 'Healthy breakfast'], included: ['Accommodation', 'Yoga sessions', 'Spa treatments', 'Thermal circuit', 'Breakfast'], what_to_bring: ['Comfortable yoga clothing'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 7 days before', important_info: 'Yoga mats provided.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 12, view_count: 450, display_order: 3, created_at: now, updated_at: now },
+  { id: 94001, operator_id: DEMO_OPERATOR_ID, title: 'Romantic Getaway Package', description: 'The perfect romantic escape: 2-night stay in a sea-view suite, couples spa ritual, private beach dinner, and champagne on arrival.', short_description: '2 nights + couples spa + beach dinner + champagne', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Hotel Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 450, currency: 'EUR', duration: '2 nights', max_group_size: 2, category: 'Packages', tags: ['Romantic', 'Couples', 'Premium'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&q=80'], provider_logo: null, highlights: ['2-night sea-view suite', 'Couples spa ritual', 'Private beach dinner', 'Champagne on arrival'], included: ['Accommodation', 'Couples spa', 'Beach dinner', 'Champagne', 'Breakfast'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 7 days before', important_info: 'Subject to availability.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 34, view_count: 1200, display_order: 1, created_at: now, updated_at: now },
+  { id: 94002, operator_id: DEMO_OPERATOR_ID, title: 'Adventure Week Package', description: 'A week of experiences: 5-night stay, daily breakfast, 3 activities, airport transfers, and a welcome drink.', short_description: '5 nights + 3 activities + transfers + breakfast', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Hotel Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 890, currency: 'EUR', duration: '5 nights', max_group_size: 2, category: 'Packages', tags: ['Adventure', 'Activities', 'Week'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=800&q=80'], provider_logo: null, highlights: ['5-night stay', '3 activities included', 'Airport transfers', 'Daily breakfast'], included: ['Accommodation', '3 activities', 'Airport transfers', 'Breakfast', 'Welcome drink'], what_to_bring: null, languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 14 days before', important_info: 'Activities subject to availability.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.8, review_count: 18, view_count: 780, display_order: 2, created_at: now, updated_at: now },
+  { id: 94003, operator_id: DEMO_OPERATOR_ID, title: 'Wellness Retreat — 3 Days', description: 'A 3-day wellness immersion: daily yoga, 2 spa treatments, thermal circuit, healthy breakfast, and nutrition consultation.', short_description: '3-day wellness immersion with yoga, spa & nutrition', location: 'Vila Galé Lagos', address: 'Vila Galé Lagos, Meia Praia', meeting_point: 'Spa Reception', latitude: 37.1, longitude: -8.67, distance: null, city: 'Lagos', price: 380, currency: 'EUR', duration: '3 days', max_group_size: 1, category: 'Packages', tags: ['Wellness', 'Yoga', 'Spa'], video_url: null, image_url: '', images: ['https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&q=80'], provider_logo: null, highlights: ['Daily yoga sessions', '2 spa treatments', 'Thermal circuit', 'Healthy breakfast'], included: ['Accommodation', 'Yoga sessions', 'Spa treatments', 'Thermal circuit', 'Breakfast'], what_to_bring: ['Comfortable yoga clothing'], languages: ['Portuguese', 'English'], cancellation_policy: 'Free cancellation up to 7 days before', important_info: 'Yoga mats provided.', instant_booking: false, available_today: false, verified: true, is_active: true, rating: 4.9, review_count: 12, view_count: 450, display_order: 3, created_at: now, updated_at: now },
 ];
 
 const HOTEL_CATALOG: Record<string, ExperienceRow[]> = {
@@ -839,10 +846,14 @@ function LivePreview({ data, activeField }: { data: Partial<ExperienceRow>; acti
 
 interface CatalogViewProps {
   catalogSection: string;
+  activeHotelId?: string | null;
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
+  const { activeHotelId } = useAuth();
+
   const [experiences, setExperiences] = useState<ExperienceRow[]>([]);
+  const [catalogIds, setCatalogIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'marketplace' | 'own'>(
@@ -857,27 +868,29 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
   );
   const [creating, setCreating] = useState(false);
   const [newExperience, setNewExperience] = useState<Partial<ExperienceInsert>>(
-    { ...BLANK_EXPERIENCE, operator_id: HOTEL_OPERATOR_ID }
+    { ...BLANK_EXPERIENCE, operator_id: DEMO_OPERATOR_ID }
   );
   const [activeField, setActiveField] = useState<string | undefined>();
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showViatorImport, setShowViatorImport] = useState(false);
 
   const isMarketplaceSection = catalogSection === 'activities';
 
   const loadExperiences = useCallback(async () => {
     setLoading(true);
-    if (isMarketplaceSection) {
-      setExperiences(await fetchAllExperiences());
-    } else {
-      const category = SECTION_TO_CATEGORY[catalogSection];
-      if (category) {
-        setExperiences(await fetchExperiencesByCategory(category));
-      } else {
-        setExperiences([]);
-      }
-    }
+    const [exps, ids] = await Promise.all([
+      isMarketplaceSection
+        ? fetchAllExperiences()
+        : (() => {
+            const category = SECTION_TO_CATEGORY[catalogSection];
+            return category ? fetchExperiencesByCategory(category) : Promise.resolve([]);
+          })(),
+      activeHotelId ? fetchHotelCatalogIds(activeHotelId) : Promise.resolve(new Set<number>()),
+    ]);
+    setExperiences(exps);
+    setCatalogIds(ids);
     setLoading(false);
-  }, [catalogSection, isMarketplaceSection]);
+  }, [catalogSection, isMarketplaceSection, activeHotelId]);
 
   useEffect(() => {
     loadExperiences();
@@ -888,8 +901,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
     setFilterTab('all');
   }, [catalogSection, loadExperiences]);
 
+  // Experience created by this specific hotel
   const isOwnExperience = (exp: ExperienceRow) =>
-    exp.operator_id === HOTEL_OPERATOR_ID;
+    !!activeHotelId && exp.created_by_hotel_id === activeHotelId;
+
+  // Experience added to this hotel's catalog (via hotel_experiences join table)
+  const isInCatalog = (exp: ExperienceRow) => catalogIds.has(exp.id);
 
   const filtered = experiences.filter((exp) => {
     if (searchQuery) {
@@ -901,12 +918,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
       )
         return false;
     }
-    if (filterTab === 'marketplace' && isOwnExperience(exp)) return false;
+    if (filterTab === 'marketplace' && isInCatalog(exp)) return false;
     if (filterTab === 'own' && !isOwnExperience(exp)) return false;
     return true;
   });
 
-  const marketplaceCount = experiences.filter((e) => !isOwnExperience(e)).length;
+  const marketplaceCount = experiences.filter((e) => !isInCatalog(e)).length;
   const ownCount = experiences.filter((e) => isOwnExperience(e)).length;
 
   // ── CRUD ────────────────────────────────────────────────────────────────
@@ -932,16 +949,30 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
 
   const handleCreate = async () => {
     setSaving(true);
-    const result = await createExperience(newExperience as ExperienceInsert);
+    const result = await createExperience(newExperience as ExperienceInsert, activeHotelId ?? undefined);
     setSaving(false);
     if (result.success && result.data) {
       setExperiences((prev) => [...prev, result.data!]);
+      // Auto-mark as in catalog
+      if (activeHotelId) setCatalogIds(prev => new Set([...prev, result.data!.id]));
       setCreating(false);
       setSelectedExp(result.data);
       setEditMode(true);
       setEditData(result.data);
-      setNewExperience({ ...BLANK_EXPERIENCE, operator_id: HOTEL_OPERATOR_ID });
+      setNewExperience({ ...BLANK_EXPERIENCE, operator_id: DEMO_OPERATOR_ID });
     }
+  };
+
+  const handleAddToCatalog = async (exp: ExperienceRow) => {
+    if (!activeHotelId) return;
+    const result = await addExperienceToHotelCatalog(activeHotelId, exp.id);
+    if (result.success) setCatalogIds(prev => new Set([...prev, exp.id]));
+  };
+
+  const handleRemoveFromCatalog = async (exp: ExperienceRow) => {
+    if (!activeHotelId) return;
+    const result = await removeExperienceFromHotelCatalog(activeHotelId, exp.id);
+    if (result.success) setCatalogIds(prev => { const s = new Set(prev); s.delete(exp.id); return s; });
   };
 
   const handleDelete = async (id: number) => {
@@ -1137,6 +1168,21 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-6">
+            {!editMode && (
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/experience/${selectedExp.id}`;
+                  if (navigator.share) {
+                    navigator.share({ title: displayData.title || '', text: displayData.short_description || displayData.description || '', url });
+                  } else {
+                    navigator.clipboard.writeText(url);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium text-bored-gray-600 hover:bg-bored-gray-50 transition-colors"
+              >
+                <Share2 size={14} /> Share
+              </button>
+            )}
             {isOwn && !editMode && (
               <button
                 onClick={() => {
@@ -1160,22 +1206,20 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
                   Cancel
                 </button>
                 <button
-                  onClick={handleSave}
+                  onClick={async () => {
+                    await handleSave();
+                    setEditMode(false);
+                    setEditData({});
+                  }}
                   disabled={saving}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm bg-bored-black text-white hover:bg-bored-gray-800 disabled:opacity-30`}
                 >
                   {saving ? (
                     <Loader2 size={14} className="animate-spin" />
-                  ) : saveStatus === 'saved' ? (
-                    <CheckCircle size={14} />
                   ) : (
-                    <Save size={14} />
+                    <CheckCircle size={14} />
                   )}
-                  {saving
-                    ? 'Saving...'
-                    : saveStatus === 'saved'
-                    ? 'Saved!'
-                    : 'Save changes'}
+                  {saving ? 'Saving...' : 'Done'}
                 </button>
               </>
             )}
@@ -1257,6 +1301,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowViatorImport(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-600 hover:to-red-600 text-sm font-medium transition-all shadow-sm"
+          >
+            <Globe size={14} /> Import from Viator
+          </button>
           <button
             onClick={() => setShowBulkUpload(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl hover:from-violet-600 hover:to-fuchsia-600 text-sm font-medium transition-all shadow-sm"
@@ -1368,19 +1418,36 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
                     ) : (
                       <span />
                     )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleActive(exp);
-                      }}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center backdrop-blur-sm transition-colors ${
-                        exp.is_active
-                          ? 'bg-white/85 text-bored-black'
-                          : 'bg-white/60 text-bored-gray-400'
-                      }`}
-                    >
-                      {exp.is_active ? <Eye size={13} /> : <EyeOff size={13} />}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const url = `${window.location.origin}/experience/${exp.id}`;
+                          if (navigator.share) {
+                            navigator.share({ title: exp.title, text: exp.short_description || exp.description || '', url });
+                          } else {
+                            navigator.clipboard.writeText(url);
+                          }
+                        }}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center backdrop-blur-sm transition-colors bg-white/85 text-bored-black hover:bg-white"
+                        title="Share experience"
+                      >
+                        <Share2 size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleActive(exp);
+                        }}
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center backdrop-blur-sm transition-colors ${
+                          exp.is_active
+                            ? 'bg-white/85 text-bored-black'
+                            : 'bg-white/60 text-bored-gray-400'
+                        }`}
+                      >
+                        {exp.is_active ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1503,6 +1570,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
           {(filterTab === 'own' || !isMarketplaceSection) && (
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setShowViatorImport(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:from-orange-600 hover:to-red-600 transition-all shadow-sm"
+              >
+                <Globe size={15} /> Import from Viator
+              </button>
+              <button
                 onClick={() => setShowBulkUpload(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl text-sm font-medium hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-sm"
               >
@@ -1519,15 +1592,34 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
         </div>
       )}
 
+      {/* Viator Import Modal */}
+      <ViatorImportModal
+        open={showViatorImport}
+        onClose={() => setShowViatorImport(false)}
+        onComplete={(created) => {
+          setExperiences((prev) => [...prev, created]);
+          if (activeHotelId) {
+            addExperienceToHotelCatalog(activeHotelId, created.id);
+            setCatalogIds(prev => new Set([...prev, created.id]));
+          }
+          setShowViatorImport(false);
+        }}
+        operatorId={DEMO_OPERATOR_ID}
+      />
+
       {/* Bulk Upload Modal */}
       <BulkUploadModal
         open={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
         onComplete={(created) => {
           setExperiences((prev) => [...prev, ...created]);
+          if (activeHotelId) {
+            created.forEach(e => addExperienceToHotelCatalog(activeHotelId, e.id));
+            setCatalogIds(prev => new Set([...prev, ...created.map(e => e.id)]));
+          }
           setShowBulkUpload(false);
         }}
-        operatorId={HOTEL_OPERATOR_ID}
+        operatorId={DEMO_OPERATOR_ID}
         defaultCategory={SECTION_TO_CATEGORY[catalogSection]}
         hotelContext={{
           city: '',
@@ -1635,11 +1727,13 @@ function ReadOnlyDetail({ data }: { data: Partial<ExperienceRow> }) {
             </p>
           )}
         </div>
-        {data.instant_booking && (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bored-gray-50 text-bored-gray-600 text-xs font-medium border border-bored-gray-100">
-            <Zap size={12} /> Instant booking
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {data.instant_booking && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bored-gray-50 text-bored-gray-600 text-xs font-medium border border-bored-gray-100">
+              <Zap size={12} /> Instant booking
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Description */}

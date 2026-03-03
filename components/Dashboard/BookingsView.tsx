@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { Search, Filter, Download, ChevronRight, Calendar, Users, DollarSign, Check, X, Clock } from 'lucide-react';
 import { BookingItem } from '../../types';
 
+interface BookingsViewProps {
+  hotelId: string | null;
+}
+
 const mockBookings: BookingItem[] = [
   {
     id: 'BK001',
@@ -135,7 +139,7 @@ const mockBookings: BookingItem[] = [
   }
 ];
 
-export const BookingsView: React.FC = () => {
+export const BookingsView: React.FC<BookingsViewProps> = ({ hotelId: _hotelId }) => {
   const [filter, setFilter] = useState<'all' | 'confirmed' | 'pending' | 'completed' | 'cancelled'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 

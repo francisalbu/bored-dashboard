@@ -51,10 +51,14 @@ export async function fetchAllHotelConfigs(): Promise<HotelConfig[]> {
 
 export async function saveHotelConfig(config: HotelConfig): Promise<{ success: boolean; error?: string }> {
   const row = configToRow(config);
+  // Use UPDATE (not upsert) — hotel rows are created by migrations, not by the dashboard.
+  // Upsert would fail if the user doesn't have INSERT permission (RLS).
+  const { id, ...fields } = row;
 
   const { error } = await supabase
     .from('hotel_config')
-    .upsert(row, { onConflict: 'id' });
+    .update(fields)
+    .eq('id', id);
 
   if (error) {
     console.error('Error saving hotel config:', error);

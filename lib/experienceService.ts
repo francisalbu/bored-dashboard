@@ -7,6 +7,7 @@ import { supabase } from './supabase';
 export interface ExperienceRow {
   id: number;
   operator_id: number;
+  created_by_hotel_id?: string | null;  // hotel that created this experience
   title: string;
   description: string;
   short_description: string | null;
@@ -140,6 +141,131 @@ export async function fetchExperienceById(id: number): Promise<ExperienceRow | n
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Hotel catalog — fetch IDs of experiences in a hotel's catalog
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchHotelCatalogIds(hotelId: string): Promise<Set<number>> {
+  const { data, error } = await supabase
+    .from('hotel_experiences')
+    .select('experience_id')
+    .eq('hotel_id', hotelId);
+
+  if (error) {
+    console.error('Error fetching hotel catalog ids:', error);
+    return new Set();
+  }
+  return new Set((data || []).map((r: any) => r.experience_id));
+}
+
+export async function addExperienceToHotelCatalog(
+  hotelId: string,
+  experienceId: number
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('hotel_experiences')
+    .upsert({ hotel_id: hotelId, experience_id: experienceId }, { onConflict: 'hotel_id,experience_id' });
+
+  return error ? { success: false, error: error.message } : { success: true };
+}
+
+export async function removeExperienceFromHotelCatalog(
+  hotelId: string,
+  experienceId: number
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('hotel_experiences')
+    .delete()
+    .eq('hotel_id', hotelId)
+    .eq('experience_id', experienceId);
+
+  return error ? { success: false, error: error.message } : { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch experiences for a hotel ordered by hotel_experiences.display_order
+// Use this in the dashboard instead of fetchAllExperiences() so the saved
+// order is respected on every load.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchHotelExperiencesOrdered(hotelId: string): Promise<ExperienceRow[]> {
+  const { data, error } = await supabase
+    .from('hotel_experiences')
+    .select('display_order, is_active, experiences(*)')
+    .eq('hotel_id', hotelId)
+    .order('display_order', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching hotel experiences ordered:', error);
+    // Fallback: return global list so the UI is never empty
+    return fetchAllExperiences();
+  }
+
+  if (!data || data.length === 0) {
+    // Hotel hasn't customised its catalog yet — show global list
+    // On first Save Order or toggle, rows will be upserted into hotel_experiences
+    return fetchAllExperiences();
+  }
+
+  // Override is_active with the per-hotel value (not the global experiences.is_active)
+  return data.map((row: any) => ({
+    ...(row.experiences as ExperienceRow),
+    is_active: row.is_active,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toggle per-hotel visibility (stored in hotel_experiences, not experiences)
+// Avoids RLS issues — marketplace experiences can't be written globally
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function toggleHotelExperienceActive(
+  hotelId: string,
+  experienceId: number,
+  isActive: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('hotel_experiences')
+    .upsert(
+      { hotel_id: hotelId, experience_id: experienceId, is_active: isActive },
+      { onConflict: 'hotel_id,experience_id' }
+    );
+
+  if (error) {
+    console.error('Error toggling hotel experience visibility:', error);
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Update per-hotel display order (stored in hotel_experiences, not experiences)
+// This avoids RLS issues — hotel operators can only write their own catalog rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function updateHotelExperienceOrder(
+  hotelId: string,
+  orderedIds: { experienceId: number; display_order: number; is_active: boolean }[]
+): Promise<{ success: boolean; error?: string }> {
+  const rows = orderedIds.map(({ experienceId, display_order, is_active }) => ({
+    hotel_id: hotelId,
+    experience_id: experienceId,
+    display_order,
+    is_active,
+  }));
+
+  const { error } = await supabase
+    .from('hotel_experiences')
+    .upsert(rows, { onConflict: 'hotel_id,experience_id' });
+
+  if (error) {
+    console.error('Error updating hotel experience order:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Toggle experience visibility
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -187,17 +313,24 @@ export async function updateExperienceOrder(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function createExperience(
-  experience: ExperienceInsert
+  experience: ExperienceInsert,
+  hotelId?: string
 ): Promise<{ success: boolean; data?: ExperienceRow; error?: string }> {
+  const payload = hotelId ? { ...experience, created_by_hotel_id: hotelId } : experience;
   const { data, error } = await supabase
     .from('experiences')
-    .insert(experience)
+    .insert(payload)
     .select('*')
     .single();
 
   if (error) {
     console.error('Error creating experience:', error);
     return { success: false, error: error.message };
+  }
+
+  // Auto-add to hotel's catalog
+  if (hotelId && data) {
+    await addExperienceToHotelCatalog(hotelId, (data as ExperienceRow).id);
   }
 
   return { success: true, data: data as ExperienceRow };
