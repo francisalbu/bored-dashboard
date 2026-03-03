@@ -927,22 +927,60 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
               </button>
             </div>
 
-            {/* City selector — picks the hotel's city and bulk-activates experiences */}
+            {/* ── City + Radius combined filter ── */}
             {(() => {
               const CITIES = ['Lisboa', 'Porto', 'Lagos', 'Viana do Castelo', 'Funchal'];
               const cityCount = (city: string) =>
                 experiences.filter(e => matchesCity(e, city)).length;
+
+              const hasCoords = !!(config?.latitude && config?.longitude);
+
+              // Preview: how many in selected city pass the radius
+              const previewCount = cityFilter
+                ? experiences.filter(e =>
+                    matchesCity(e, cityFilter) &&
+                    (!hasCoords || withinRadius(e, radiusPreview))
+                  ).length
+                : null;
+
+              const handleApplyCombined = () => {
+                if (!cityFilter) return;
+                setRadiusKm(radiusPreview);
+                setExperiences(prev =>
+                  prev.map(exp => ({
+                    ...exp,
+                    is_active:
+                      matchesCity(exp, cityFilter) &&
+                      (!hasCoords || withinRadius(exp, radiusPreview)),
+                  }))
+                );
+              };
+
               return (
-                <div className="mt-5 mb-6 p-4 bg-bored-gray-50 rounded-xl border border-bored-gray-200">
-                  <div className="flex items-center justify-between">
+                <div className="mt-5 mb-6 rounded-xl border border-bored-gray-200 overflow-hidden">
+                  {/* Row 1 — City */}
+                  <div className="flex items-center justify-between px-5 py-4 bg-white">
                     <div>
-                      <p className="text-xs font-semibold text-bored-gray-700 mb-0.5">Hotel city</p>
-                      <p className="text-xs text-bored-gray-400">Choose a city to automatically activate its experiences and hide the rest.</p>
+                      <p className="text-sm font-semibold text-bored-black">Hotel city</p>
+                      <p className="text-xs text-bored-gray-400 mt-0.5">Activate experiences by city</p>
                     </div>
                     <select
                       value={cityFilter || ''}
-                      onChange={e => e.target.value ? handleCitySelect(e.target.value) : setCityFilter(null)}
-                      className="ml-4 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-52 flex-shrink-0"
+                      onChange={e => {
+                        const city = e.target.value || null;
+                        setCityFilter(city);
+                        if (city) {
+                          setExperiences(prev =>
+                            prev.map(exp => ({
+                              ...exp,
+                              is_active:
+                                matchesCity(exp, city) &&
+                                (!hasCoords || withinRadius(exp, radiusPreview)),
+                            }))
+                          );
+                        }
+                      }}
+                      className="ml-4 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-56 flex-shrink-0 cursor-pointer"
                     >
                       <option value="">— Select city —</option>
                       {CITIES.filter(c => cityCount(c) > 0).map(city => (
@@ -952,87 +990,56 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                       ))}
                     </select>
                   </div>
+
+                  {/* Row 2 — Radius (only if hotel has coordinates) */}
+                  {hasCoords && (
+                    <div className="px-5 py-4 bg-bored-gray-50 border-t border-bored-gray-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-semibold text-bored-gray-600">Max distance from hotel</p>
+                        <span className="text-sm font-bold text-bored-black tabular-nums">{radiusPreview} km</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={5}
+                        max={150}
+                        step={5}
+                        value={radiusPreview}
+                        onChange={e => {
+                          const km = Number(e.target.value);
+                          setRadiusPreview(km);
+                          // Live-update is_active as slider moves
+                          if (cityFilter) {
+                            setExperiences(prev =>
+                              prev.map(exp => ({
+                                ...exp,
+                                is_active:
+                                  matchesCity(exp, cityFilter) && withinRadius(exp, km),
+                              }))
+                            );
+                          }
+                        }}
+                        className="w-full h-1.5 rounded-full accent-bored-black cursor-pointer"
+                      />
+                      <div className="flex justify-between mt-1">
+                        <span className="text-[11px] text-bored-gray-400">5 km</span>
+                        <span className="text-[11px] text-bored-gray-400">150 km</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Row 3 — Status line */}
                   {cityFilter && (
-                    <p className="mt-2 text-xs text-emerald-600 font-medium">
-                      ✓ Showing {cityFilter} — {experiences.filter(e => e.is_active).length} active, {experiences.filter(e => !e.is_active).length} hidden. Click <strong>Save Order</strong> to confirm.
-                    </p>
+                    <div className="px-5 py-3 bg-white border-t border-bored-gray-100 flex items-center justify-between">
+                      <p className="text-xs text-emerald-600 font-medium">
+                        ✓ {experiences.filter(e => e.is_active).length} active · {experiences.filter(e => !e.is_active).length} hidden
+                        {hasCoords ? ` · within ${radiusPreview} km` : ''}
+                      </p>
+                      <p className="text-xs text-bored-gray-400">Click <strong className="text-bored-black">Save Order</strong> to confirm</p>
+                    </div>
                   )}
                 </div>
               );
             })()}
-
-            {/* Radius Filter */}
-            {config?.latitude && config?.longitude && (
-              <div className="mb-6 p-4 bg-bored-gray-50 rounded-xl border border-bored-gray-200">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="text-xs font-semibold text-bored-gray-700 mb-0.5">Radius filter</p>
-                    <p className="text-xs text-bored-gray-400">Show only experiences within a distance from your hotel.</p>
-                  </div>
-                  <button
-                    onClick={() => handleApplyRadius(radiusPreview)}
-                    className="ml-4 flex-shrink-0 px-4 py-2 bg-bored-black text-white rounded-xl text-xs font-semibold hover:bg-bored-gray-800 transition-colors"
-                  >
-                    Apply
-                  </button>
-                </div>
-
-                {/* Slider */}
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-bored-gray-400 w-6">5</span>
-                  <input
-                    type="range"
-                    min={5}
-                    max={150}
-                    step={5}
-                    value={radiusPreview}
-                    onChange={e => setRadiusPreview(Number(e.target.value))}
-                    className="flex-1 h-2 rounded-full accent-bored-black cursor-pointer"
-                  />
-                  <span className="text-xs text-bored-gray-400 w-10 text-right">150km</span>
-                </div>
-
-                {/* Visual feedback bar */}
-                <div className="mt-3">
-                  {(() => {
-                    const total = experiences.length;
-                    const inRadius = experiences.filter(e => withinRadius(e, radiusPreview)).length;
-                    const pct = total > 0 ? Math.round((inRadius / total) * 100) : 0;
-                    return (
-                      <>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-semibold text-bored-gray-700">
-                            {radiusPreview} km radius
-                          </span>
-                          <span className="text-xs text-bored-gray-500">
-                            <span className="font-semibold text-bored-black">{inRadius}</span> of {total} experiences
-                          </span>
-                        </div>
-                        <div className="w-full h-2 bg-bored-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-200"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: pct > 60 ? '#22c55e' : pct > 30 ? '#f59e0b' : '#ef4444',
-                            }}
-                          />
-                        </div>
-                        {radiusKm !== radiusPreview && (
-                          <p className="mt-1.5 text-xs text-amber-600 font-medium">
-                            ↑ Click <strong>Apply</strong> to activate these {inRadius} experiences.
-                          </p>
-                        )}
-                        {radiusKm === radiusPreview && (
-                          <p className="mt-1.5 text-xs text-emerald-600 font-medium">
-                            ✓ Applied — {inRadius} experiences active within {radiusKm}km. Click <strong>Save Order</strong> to confirm.
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
 
             {/* Stats */}
             {(() => {
