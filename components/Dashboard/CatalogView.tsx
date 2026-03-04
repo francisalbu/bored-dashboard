@@ -51,7 +51,6 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/authContext';
 import { BulkUploadModal } from './BulkUploadModal';
-import { ViatorImportModal } from './ViatorImportModal';
 import { generateExperienceFields } from '../../lib/aiDescriptionService';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -872,7 +871,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
   );
   const [activeField, setActiveField] = useState<string | undefined>();
   const [showBulkUpload, setShowBulkUpload] = useState(false);
-  const [showViatorImport, setShowViatorImport] = useState(false);
 
   const isMarketplaceSection = catalogSection === 'activities';
 
@@ -1302,12 +1300,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
         </div>
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => setShowViatorImport(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-600 hover:to-red-600 text-sm font-medium transition-all shadow-sm"
-          >
-            <Globe size={14} /> Import from Viator
-          </button>
-          <button
             onClick={() => setShowBulkUpload(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl hover:from-violet-600 hover:to-fuchsia-600 text-sm font-medium transition-all shadow-sm"
           >
@@ -1570,12 +1562,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
           {(filterTab === 'own' || !isMarketplaceSection) && (
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowViatorImport(true)}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:from-orange-600 hover:to-red-600 transition-all shadow-sm"
-              >
-                <Globe size={15} /> Import from Viator
-              </button>
-              <button
                 onClick={() => setShowBulkUpload(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl text-sm font-medium hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-sm"
               >
@@ -1591,21 +1577,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ catalogSection }) => {
           )}
         </div>
       )}
-
-      {/* Viator Import Modal */}
-      <ViatorImportModal
-        open={showViatorImport}
-        onClose={() => setShowViatorImport(false)}
-        onComplete={(created) => {
-          setExperiences((prev) => [...prev, created]);
-          if (activeHotelId) {
-            addExperienceToHotelCatalog(activeHotelId, created.id);
-            setCatalogIds(prev => new Set([...prev, created.id]));
-          }
-          setShowViatorImport(false);
-        }}
-        operatorId={DEMO_OPERATOR_ID}
-      />
 
       {/* Bulk Upload Modal */}
       <BulkUploadModal
