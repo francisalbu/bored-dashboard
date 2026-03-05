@@ -205,10 +205,11 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     setTimeout(() => setSaveStatus('idle'), 3000);
   };
 
-  const handleSaveExperienceOrder = async () => {
+  const handleSaveExperienceOrder = async (exps?: ExperienceRow[]) => {
     if (!selectedHotelId) return;
     setExperiencesSaving(true);
-    const orderedIds = experiences.map((exp, index) => ({
+    const source = exps ?? experiences;
+    const orderedIds = source.map((exp, index) => ({
       experienceId: exp.id,
       display_order: index + 1,
       is_active: exp.is_active,
@@ -220,7 +221,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     }
   };
 
-  const handleToggleExperience = async (id: number, currentActive: boolean) => {
+    const handleToggleExperience = async (id: number, currentActive: boolean) => {
     if (!selectedHotelId) return;
     const newActive = !currentActive;
     // Optimistic update
@@ -966,18 +967,18 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                     </div>
                     <select
                       value={cityFilter || ''}
-                      onChange={e => {
+                      onChange={async e => {
                         const city = e.target.value || null;
                         setCityFilter(city);
                         if (city) {
-                          setExperiences(prev =>
-                            prev.map(exp => ({
-                              ...exp,
-                              is_active:
-                                matchesCity(exp, city) &&
-                                (!hasCoords || withinRadius(exp, radiusPreview)),
-                            }))
-                          );
+                          const updated = experiences.map(exp => ({
+                            ...exp,
+                            is_active:
+                              matchesCity(exp, city) &&
+                              (!hasCoords || withinRadius(exp, radiusPreview)),
+                          }));
+                          setExperiences(updated);
+                          await handleSaveExperienceOrder(updated);
                         }
                       }}
                       className="ml-4 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-56 flex-shrink-0 cursor-pointer"
@@ -1034,7 +1035,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                         ✓ {experiences.filter(e => e.is_active).length} active · {experiences.filter(e => !e.is_active).length} hidden
                         {hasCoords ? ` · within ${radiusPreview} km` : ''}
                       </p>
-                      <p className="text-xs text-bored-gray-400">Click <strong className="text-bored-black">Save Order</strong> to confirm</p>
+                                            <p className="text-xs text-bored-gray-400">{experiencesSaving ? '⏳ Saving...' : '✓ Saved automatically'}</p>
                     </div>
                   )}
                 </div>
