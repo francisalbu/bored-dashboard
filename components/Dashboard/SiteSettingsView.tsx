@@ -26,6 +26,7 @@ import {
   Image,
   ChevronDown,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import {
   HotelConfig,
@@ -49,6 +50,7 @@ import {
   saveHotelConfig,
 } from '../../lib/hotelConfigService';
 import { useAuth } from '../../lib/authContext';
+import { supabase } from '../../lib/supabase';
 import {
   ExperienceRow,
   fetchHotelExperiencesOrdered,
@@ -73,7 +75,7 @@ const PREVIEW_CARDS = [
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Section = 'branding' | 'content' | 'features' | 'experiences' | 'ai-bot' | 'staff';
+type Section = 'branding' | 'content' | 'features' | 'experiences' | 'ai-bot' | 'staff' | 'account';
 
 interface SiteSettingsViewProps {
   /** Hotel id from auth context — if provided, skips the in-page hotel selector */
@@ -81,7 +83,7 @@ interface SiteSettingsViewProps {
 }
 
 export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelId }) => {
-  const { hotels: authHotels } = useAuth();
+  const { hotels: authHotels, session: authSession } = useAuth();
 
   // Only show hotels this user actually has access to (from auth context)
   const hotelIds = authHotels.map(h => ({ id: h.id, name: h.name }));
@@ -99,11 +101,20 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const [experiences, setExperiences] = useState<ExperienceRow[]>([]);
   const [experiencesLoading, setExperiencesLoading] = useState(false);
   const [experiencesSaving, setExperiencesSaving] = useState(false);
+  const [experiencesSaveError, setExperiencesSaveError] = useState<string | null>(null);
   const [cityFilter, setCityFilter] = useState<string | null>(null);
 
   // Radius filter
   const [radiusKm, setRadiusKm] = useState<number>(25);
   const [radiusPreview, setRadiusPreview] = useState<number>(25); // live slider value before apply
+
+  // Password change state
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwStatus, setPwStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [pwError, setPwError] = useState('');
 
   // File upload processing state
   const [fileProcessing, setFileProcessing] = useState<Record<string, boolean>>({});
@@ -208,6 +219,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const handleSaveExperienceOrder = async (exps?: ExperienceRow[]) => {
     if (!selectedHotelId) return;
     setExperiencesSaving(true);
+    setExperiencesSaveError(null);
     const source = exps ?? experiences;
     const orderedIds = source.map((exp, index) => ({
       experienceId: exp.id,
@@ -218,6 +230,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     setExperiencesSaving(false);
     if (!result.success) {
       console.error('Failed to save experience order:', result.error);
+      setExperiencesSaveError(result.error ?? 'Failed to save. Please try again.');
     }
   };
 
@@ -303,18 +316,39 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     setDragOverIndex(index);
   };
 
-  const handleDrop = (index: number) => {
-    if (dragIndex === null || dragIndex === index) {
+  const handleDrop = (toIndex: number) => {
+    if (dragIndex === null || dragIndex === toIndex) {
       setDragIndex(null);
       setDragOverIndex(null);
       return;
     }
-    const updated = [...experiences];
-    const [dragged] = updated.splice(dragIndex, 1);
-    updated.splice(index, 0, dragged);
+
+    // The indices come from the rendered list, which may be filtered by cityFilter.
+    // We must reorder within that display list and then merge back into the full array.
+    const displayList = cityFilter
+      ? experiences.filter(e => matchesCity(e, cityFilter))
+      : [...experiences];
+
+    const reordered = [...displayList];
+    const [dragged] = reordered.splice(dragIndex, 1);
+    reordered.splice(toIndex, 0, dragged);
+
+    let updated: ExperienceRow[];
+    if (cityFilter) {
+      // Replace filtered items in their original positions, keeping unfiltered items intact
+      let fi = 0;
+      updated = experiences.map(e =>
+        matchesCity(e, cityFilter) ? reordered[fi++] : e
+      );
+    } else {
+      updated = reordered;
+    }
+
     setExperiences(updated);
     setDragIndex(null);
     setDragOverIndex(null);
+    // Auto-save immediately after drag (pass updated array since state isn't flushed yet)
+    handleSaveExperienceOrder(updated);
   };
 
   const handleDragEnd = () => {
@@ -523,6 +557,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
           { key: 'ai-bot' as const, label: 'AI Bot', icon: <Bot size={16} /> },
           { key: 'features' as const, label: 'Features', icon: <Eye size={16} /> },
           { key: 'staff' as const, label: 'Staff', icon: <Users size={16} /> },
+          { key: 'account' as const, label: 'Account', icon: <Lock size={16} /> },
         ]).map(section => (
           <button
             key={section.key}
@@ -918,14 +953,21 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                   Toggle visibility and reorder how experiences appear on the public website
                 </p>
               </div>
-              <button
-                onClick={handleSaveExperienceOrder}
-                disabled={experiencesSaving}
-                className="flex items-center gap-2 px-5 py-2.5 bg-bored-black text-white rounded-xl text-sm font-medium hover:bg-bored-gray-800 transition-colors disabled:opacity-50"
-              >
-                {experiencesSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                Save Order
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  onClick={() => handleSaveExperienceOrder()}
+                  disabled={experiencesSaving}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-bored-black text-white rounded-xl text-sm font-medium hover:bg-bored-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {experiencesSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {experiencesSaving ? 'Saving…' : 'Save Order'}
+                </button>
+                {experiencesSaveError && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle size={12} /> {experiencesSaveError}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* ── City + Radius combined filter ── */}
@@ -1780,6 +1822,94 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ACCOUNT SECTION ──────────────────────────────────────────────── */}
+      {activeSection === 'account' && (
+        <div className="space-y-8">
+          <div className="bg-white rounded-2xl border border-bored-gray-200 p-8 max-w-lg">
+            <h2 className="text-lg font-semibold text-bored-black mb-1">Change Password</h2>
+            <p className="text-sm text-bored-gray-500 mb-6">Update the password for your account</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-bored-gray-500 mb-2 uppercase tracking-wide">New Password</label>
+                <input
+                  type="password"
+                  value={pwNew}
+                  onChange={e => { setPwNew(e.target.value); setPwStatus('idle'); }}
+                  placeholder="Minimum 8 characters"
+                  className="w-full px-4 py-3 border border-bored-gray-200 rounded-xl text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-bored-gray-500 mb-2 uppercase tracking-wide">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={pwConfirm}
+                  onChange={e => { setPwConfirm(e.target.value); setPwStatus('idle'); }}
+                  placeholder="Repeat new password"
+                  className="w-full px-4 py-3 border border-bored-gray-200 rounded-xl text-sm"
+                />
+              </div>
+            </div>
+
+            {pwStatus === 'error' && (
+              <div className="mt-4 flex items-center gap-2 text-red-600 text-sm">
+                <AlertCircle size={15} />
+                {pwError}
+              </div>
+            )}
+            {pwStatus === 'success' && (
+              <div className="mt-4 flex items-center gap-2 text-green-600 text-sm">
+                <Check size={15} />
+                Password updated successfully!
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                setPwError('');
+                if (!pwNew || pwNew.length < 8) {
+                  setPwError('Password must be at least 8 characters.');
+                  setPwStatus('error');
+                  return;
+                }
+                if (pwNew !== pwConfirm) {
+                  setPwError('Passwords do not match.');
+                  setPwStatus('error');
+                  return;
+                }
+                setPwSaving(true);
+                // Ensure session is fresh before updating
+                if (!authSession) {
+                  const { error: refreshError } = await supabase.auth.refreshSession();
+                  if (refreshError) {
+                    setPwError('Session expired. Please log out and log in again.');
+                    setPwStatus('error');
+                    setPwSaving(false);
+                    return;
+                  }
+                }
+                const { error } = await supabase.auth.updateUser({ password: pwNew });
+                setPwSaving(false);
+                if (error) {
+                  setPwError(error.message);
+                  setPwStatus('error');
+                } else {
+                  setPwStatus('success');
+                  setPwNew('');
+                  setPwConfirm('');
+                }
+              }}
+              disabled={pwSaving}
+              className="mt-6 flex items-center gap-2 px-6 py-3 bg-bored-black text-white rounded-xl text-sm font-medium hover:bg-bored-gray-800 transition-colors disabled:opacity-50"
+            >
+              {pwSaving ? <Loader2 size={15} className="animate-spin" /> : <Lock size={15} />}
+              {pwSaving ? 'Saving…' : 'Update Password'}
+            </button>
           </div>
         </div>
       )}

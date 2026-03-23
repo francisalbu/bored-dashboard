@@ -10,6 +10,7 @@ import { EarningsView } from './components/Dashboard/EarningsView';
 import { SiteSettingsView } from './components/Dashboard/SiteSettingsView';
 import { CatalogView } from './components/Dashboard/CatalogView';
 import { SuperAdminView } from './components/Dashboard/SuperAdminView';
+import { SmartSeerView } from './components/Dashboard/SmartSeerView';
 import { LoginPage } from './components/Auth/LoginPage';
 import { HotelSelector } from './components/Auth/HotelSelector';
 import { AuthProvider, useAuth } from './lib/authContext';
@@ -148,6 +149,7 @@ const Dashboard: React.FC = () => {
     if (currentView === 'earnings')     return <EarningsView     hotelId={activeHotelId} />;
     if (currentView === 'guests')       return <GuestsView       hotelId={activeHotelId} />;
     if (currentView === 'site_settings')return <SiteSettingsView activeHotelId={activeHotelId} />;
+    if (currentView === 'smartseer')    return <SmartSeerView     hotelId={activeHotelId} />;
     if (currentView === 'admin' && profile?.role === 'super_admin') return <SuperAdminView />;
     if (['activities', 'spa', 'rentals', 'packages'].includes(currentView)) {
       return <CatalogView catalogSection={currentView} activeHotelId={activeHotelId} />;

@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ShieldCheck,
   Check,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../lib/authContext';
 
@@ -126,6 +127,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
             onClick={() => onNavigate('guests')}
           />
         </div>
+
+        {/* SMARTSEER SECTION — só para hotéis com SmartSeer ativo */}
+        {activeHotelId === 'lisbon-hostel' && (
+          <div className="pt-4 pb-2">
+            <div className="px-4 mb-3">
+              <h4 className="text-xs font-semibold text-bored-gray-400 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles size={10} className="text-yellow-500" /> SmartSeer
+              </h4>
+            </div>
+            <NavItem
+              icon={<Sparkles size={18} />}
+              label="SmartSeer"
+              active={currentView === 'smartseer'}
+              onClick={() => onNavigate('smartseer')}
+            />
+          </div>
+        )}
 
         {/* ACCOUNT SECTION */}
         <div className="pt-4">
