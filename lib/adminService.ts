@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,4 +252,123 @@ export async function assignHotelToGroup(
     .eq('id', hotelId);
 
   return { success: !error };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Create a brand-new dashboard user
+//
+// Uses the service role key (VITE_SUPABASE_SERVICE_ROLE_KEY) to call
+// admin.auth.admin.createUser() directly — no invite, no email, user is
+// created and confirmed immediately.
+//
+// The admin shares credentials manually. On first login, the dashboard
+// detects must_change_password: true in user_metadata and forces a password
+// change before showing the main dashboard.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getAdminClient() {
+  const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) throw new Error('VITE_SUPABASE_SERVICE_ROLE_KEY not set in .env');
+  return createClient(
+    'https://hnivuisqktlrusyqywaz.supabase.co',
+    serviceRoleKey,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
+export interface CreateUserParams {
+  email: string;
+  fullName: string;
+  password: string;
+  globalRole: 'hotel_admin' | 'staff';
+  hotelId?: string;
+  hotelRole?: 'admin' | 'staff';
+}
+
+export async function createDashboardUser(
+  params: CreateUserParams
+): Promise<{ success: boolean; error?: string }> {
+  const { email, fullName, password, globalRole, hotelId, hotelRole } = params;
+
+  let adminClient;
+  try {
+    adminClient = getAdminClient();
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+
+  // ── Try to create user directly via service role ──────────────────────────
+  let userId: string;
+
+  const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+    email: email.trim(),
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName.trim(),
+      must_change_password: true,
+    },
+  });
+
+  if (createError) {
+    // User already exists in auth — find them and update instead of failing
+    const alreadyExists =
+      createError.message.toLowerCase().includes('already been registered') ||
+      createError.message.toLowerCase().includes('already registered') ||
+      createError.message.toLowerCase().includes('already exists');
+
+    if (!alreadyExists) return { success: false, error: createError.message };
+
+    // Look up existing user by email
+    const { data: list } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+    const existing = list?.users?.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
+    if (!existing) return { success: false, error: 'User exists but could not be found. Try refreshing.' };
+
+    userId = existing.id;
+
+    // Update password + metadata on existing user
+    await adminClient.auth.admin.updateUserById(userId, {
+      password,
+      user_metadata: {
+        ...existing.user_metadata,
+        full_name: fullName.trim(),
+        must_change_password: true,
+      },
+    });
+  } else {
+    userId = created.user.id;
+  }
+
+  // ── Ensure dashboard_users row exists (trigger may not have fired) ─────────
+  await supabase
+    .from('dashboard_users')
+    .upsert(
+      { id: userId, email: email.trim(), full_name: fullName.trim(), role: globalRole },
+      { onConflict: 'id' }
+    );
+
+  // ── Assign to hotel if specified ──────────────────────────────────────────
+  if (hotelId) {
+    await supabase
+      .from('dashboard_user_hotels')
+      .upsert(
+        { user_id: userId, hotel_id: hotelId, role: hotelRole ?? 'admin' },
+        { onConflict: 'user_id,hotel_id' }
+      );
+  }
+
+  return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Send a password-reset / "set your password" email to an existing user
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sendPasswordReset(
+  email: string
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}?mode=reset-password`,
+  });
+  return error ? { success: false, error: error.message } : { success: true };
 }

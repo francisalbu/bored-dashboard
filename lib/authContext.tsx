@@ -31,12 +31,14 @@ interface AuthState {
   hotels: AccessibleHotel[];
   activeHotelId: string | null;
   loading: boolean;
+  needsPasswordChange: boolean;
 }
 
 interface AuthActions {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   setActiveHotelId: (id: string) => void;
+  clearPasswordChangeRequired: () => void;
 }
 
 export type AuthContextValue = AuthState & AuthActions;
@@ -136,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hotels, setHotels] = useState<AccessibleHotel[]>([]);
   const [activeHotelId, setActiveHotelIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   // Ref (not state) so it's never stale inside the onAuthStateChange closure
   const initialSessionLoaded = useRef(false);
 
@@ -163,6 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       // Fresh login → always clear and show selector (unless only 1 hotel)
       localStorage.removeItem('activeHotelId');
+      localStorage.setItem('dashboard_view', 'site_settings'); // always start on site settings
       if (hotelList.length === 1) {
         setActiveHotelIdState(hotelList[0].id);
       }
@@ -190,15 +194,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        // TOKEN_REFRESHED / USER_UPDATED = silent token renewal or updateUser() call.
+        // No need to reload profile/hotels — just update the session reference.
+        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
+
+        // PASSWORD_RECOVERY = user followed the "reset password" link in email.
+        // Show the forced password change screen immediately.
+        if (event === 'PASSWORD_RECOVERY') {
+          setNeedsPasswordChange(true);
+          setLoading(true);
+          loadUserData(s.user, true);
+          return;
+        }
+
         setLoading(true);
-        // SIGNED_IN fires on both fresh login AND page refresh.
-        // We use the ref to distinguish: if initial session is already loaded,
-        // this is a fresh login → don't restore hotel from storage.
-        const restoreFromStorage = initialSessionLoaded.current && event !== 'SIGNED_IN';
+        // Only treat as a "fresh login" the very first time we see SIGNED_IN
+        const isFreshLogin = !initialSessionLoaded.current;
         if (!initialSessionLoaded.current) {
           initialSessionLoaded.current = true;
         }
-        loadUserData(s.user, restoreFromStorage);
+
+        // First login with admin-set credentials: must_change_password flag
+        // is stored in user_metadata by createDashboardUser()
+        if (isFreshLogin && s.user.user_metadata?.must_change_password === true) {
+          setNeedsPasswordChange(true);
+        }
+        // restoreFromStorage = true for everything except a genuine first login
+        loadUserData(s.user, !isFreshLogin);
       } else {
         setProfile(null);
         setHotels([]);
@@ -226,6 +248,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveHotelIdState(id);
   };
 
+  const clearPasswordChangeRequired = () => setNeedsPasswordChange(false);
+
   const value: AuthContextValue = {
     session,
     user,
@@ -233,9 +257,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hotels,
     activeHotelId,
     loading,
+    needsPasswordChange,
     signIn,
     signOut,
     setActiveHotelId,
+    clearPasswordChangeRequired,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

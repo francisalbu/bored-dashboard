@@ -18,6 +18,10 @@ import {
   X,
   Copy,
   Check,
+  KeyRound,
+  SendHorizonal,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   fetchAllDashboardUsers,
@@ -32,6 +36,9 @@ import {
   revokeInvite,
   createHotelGroup,
   assignHotelToGroup,
+  createDashboardUser,
+  sendPasswordReset,
+  type CreateUserParams,
   type DashboardUser,
   type HotelWithUsers,
   type PendingInvite,
@@ -259,6 +266,186 @@ const HotelsTab: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Create User form (inline modal inside UsersTab)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CreateUserForm: React.FC<{
+  hotels: HotelWithUsers[];
+  onSuccess: () => void;
+  onCancel: () => void;
+}> = ({ hotels, onSuccess, onCancel }) => {
+  const [email, setEmail]           = useState('');
+  const [fullName, setFullName]     = useState('');
+  const [password, setPassword]     = useState('');
+  const [showPw, setShowPw]         = useState(false);
+  const [pwCopied, setPwCopied]     = useState(false);
+  const [globalRole, setGlobalRole] = useState<'hotel_admin' | 'staff'>('hotel_admin');
+  const [hotelId, setHotelId]       = useState('');
+  const [hotelRole, setHotelRole]   = useState<'admin' | 'staff'>('admin');
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState('');
+  const [success, setSuccess]       = useState('');
+
+  const copyPassword = () => {
+    if (!password) return;
+    navigator.clipboard.writeText(password).then(() => {
+      setPwCopied(true);
+      setTimeout(() => setPwCopied(false), 2000);
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (!email.trim()) { setError('Email is required'); return; }
+    if (!fullName.trim()) { setError('Full name is required'); return; }
+    if (!password.trim()) { setError('Password is required'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+
+    setSaving(true);
+    setError('');
+
+    const params: CreateUserParams = {
+      email:      email.trim(),
+      fullName:   fullName.trim(),
+      password:   password.trim(),
+      globalRole,
+      hotelId:    hotelId || undefined,
+      hotelRole:  hotelId ? hotelRole : undefined,
+    };
+
+    const res = await createDashboardUser(params);
+    setSaving(false);
+
+    if (!res.success) {
+      setError(res.error || 'Something went wrong');
+      return;
+    }
+
+    setSuccess(`✓ ${email.trim()} created. Share the credentials manually.`);
+    setTimeout(() => { onSuccess(); }, 2000);
+  };
+
+  if (success) {
+    return (
+      <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-sm text-green-800 flex items-start gap-3">
+        <CheckCircle size={16} className="mt-0.5 flex-shrink-0 text-green-600" />
+        <span>{success}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-bored-gray-200 rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-bored-black flex items-center gap-2">
+          <UserPlus size={15} className="text-bored-gray-500" />
+          New dashboard user
+        </h3>
+        <button onClick={onCancel} className="text-bored-gray-300 hover:text-bored-black transition-colors">
+          <X size={15} />
+        </button>
+      </div>
+
+      {error && (
+        <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-bored-gray-600 mb-1">Email address *</label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="patricia@hotel.com"
+            className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-bored-gray-600 mb-1">Full name *</label>
+          <input
+            type="text"
+            value={fullName}
+            onChange={e => setFullName(e.target.value)}
+            placeholder="Patricia Vieira"
+            className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-bored-gray-600 mb-1">Temporary password *</label>
+          <div className="relative">
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Min. 8 characters"
+              className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 pr-16 focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+            />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="p-1.5 text-bored-gray-300 hover:text-bored-black rounded-lg transition-colors">
+                {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+              <button type="button" onClick={copyPassword} title="Copy password"
+                className="p-1.5 text-bored-gray-300 hover:text-bored-black rounded-lg transition-colors">
+                {pwCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+              </button>
+            </div>
+          </div>
+          <p className="text-[11px] text-bored-gray-400 mt-1">
+            Share this with the user. They'll be asked to change it on first login.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-bored-gray-600 mb-1">Global role</label>
+          <select
+            value={globalRole}
+            onChange={e => setGlobalRole(e.target.value as any)}
+            className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+          >
+            <option value="hotel_admin">Hotel Admin</option>
+            <option value="staff">Staff</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-bored-gray-600 mb-1">Assign to hotel</label>
+          <select
+            value={hotelId}
+            onChange={e => setHotelId(e.target.value)}
+            className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+          >
+            <option value="">None (assign later)</option>
+            {hotels.map(h => (
+              <option key={h.id} value={h.id}>{h.name}</option>
+            ))}
+          </select>
+        </div>
+        {hotelId && (
+          <div>
+            <label className="block text-xs font-medium text-bored-gray-600 mb-1">Hotel role</label>
+            <select
+              value={hotelRole}
+              onChange={e => setHotelRole(e.target.value as any)}
+              className="w-full text-sm border border-bored-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-bored-neon/50"
+            >
+              <option value="admin">Admin</option>
+              <option value="staff">Staff</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <Btn variant="primary" onClick={handleSubmit} disabled={saving}>
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
+          {saving ? 'Creating…' : 'Create user'}
+        </Btn>
+        <Btn variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Users tab
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -267,6 +454,10 @@ const UsersTab: React.FC<{
   hotels: HotelWithUsers[];
   onRefresh: () => void;
 }> = ({ users, hotels, onRefresh }) => {
+  const [showCreate, setShowCreate]         = useState(false);
+  const [resetSent, setResetSent]           = useState<string | null>(null);   // email that just got reset
+  const [resetLoading, setResetLoading]     = useState<string | null>(null);
+
   const handleGlobalRoleChange = async (userId: string, role: 'super_admin' | 'hotel_admin' | 'staff') => {
     await updateDashboardUserRole(userId, role);
     onRefresh();
@@ -277,8 +468,33 @@ const UsersTab: React.FC<{
     onRefresh();
   };
 
+  const handleSendReset = async (email: string) => {
+    setResetLoading(email);
+    await sendPasswordReset(email);
+    setResetLoading(null);
+    setResetSent(email);
+    setTimeout(() => setResetSent(null), 3000);
+  };
+
   return (
     <div className="space-y-3">
+      {/* Create user CTA */}
+      {!showCreate ? (
+        <button
+          onClick={() => setShowCreate(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 text-sm font-medium text-bored-gray-600 hover:text-bored-black border border-dashed border-bored-gray-200 hover:border-bored-gray-400 rounded-2xl transition-colors bg-white"
+        >
+          <UserPlus size={15} />
+          Create new user
+        </button>
+      ) : (
+        <CreateUserForm
+          hotels={hotels}
+          onSuccess={() => { setShowCreate(false); onRefresh(); }}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
       {users.length === 0 && (
         <p className="text-sm text-center text-bored-gray-400 py-10">No users yet.</p>
       )}
@@ -307,6 +523,20 @@ const UsersTab: React.FC<{
               <option value="hotel_admin">Hotel Admin</option>
               <option value="staff">Staff</option>
             </select>
+            {/* Send password reset */}
+            <button
+              onClick={() => handleSendReset(user.email)}
+              disabled={resetLoading === user.email}
+              title="Send password reset email"
+              className="p-1.5 text-bored-gray-300 hover:text-bored-black hover:bg-bored-gray-50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {resetLoading === user.email
+                ? <Loader2 size={14} className="animate-spin" />
+                : resetSent === user.email
+                  ? <Check size={14} className="text-green-500" />
+                  : <KeyRound size={14} />
+              }
+            </button>
           </div>
 
           {/* Hotels assigned */}

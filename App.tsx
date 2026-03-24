@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ReviewsView } from './components/Dashboard/ReviewsView';
 import { HomeView } from './components/Dashboard/HomeView';
@@ -13,6 +13,7 @@ import { SuperAdminView } from './components/Dashboard/SuperAdminView';
 import { SmartSeerView } from './components/Dashboard/SmartSeerView';
 import { LoginPage } from './components/Auth/LoginPage';
 import { HotelSelector } from './components/Auth/HotelSelector';
+import { ForcePasswordChange } from './components/Auth/ForcePasswordChange';
 import { AuthProvider, useAuth } from './lib/authContext';
 import { supabase } from './lib/supabase';
 import {
@@ -73,8 +74,25 @@ const HotelContextBar: React.FC = () => {
 
 // ─── Inner dashboard — only rendered when auth is confirmed ──────────────────
 const Dashboard: React.FC = () => {
-  const { loading, user, activeHotelId, hotels, profile } = useAuth();
-  const [currentView, setCurrentView] = useState('site_settings');
+  const { loading, user, activeHotelId, hotels, profile, needsPasswordChange } = useAuth();
+  const [currentView, setCurrentView] = useState<string>('site_settings');
+  const viewSynced = useRef(false);
+
+  // Sync view from localStorage after auth resolves.
+  // On fresh login, loadUserData already reset localStorage → 'site_settings'.
+  // On page refresh, restores whatever the user last navigated to.
+  useEffect(() => {
+    if (!loading && user && !viewSynced.current) {
+      viewSynced.current = true;
+      setCurrentView(localStorage.getItem('dashboard_view') ?? 'site_settings');
+    }
+    if (!user) viewSynced.current = false; // reset on logout so next login re-syncs
+  }, [loading, user]);
+
+  const navigateTo = (view: string) => {
+    localStorage.setItem('dashboard_view', view);
+    setCurrentView(view);
+  };
 
   // Full-screen loader while resolving auth + profile
   if (loading) {
@@ -87,6 +105,9 @@ const Dashboard: React.FC = () => {
 
   // Not logged in → show login
   if (!user) return <LoginPage />;
+
+  // User followed a password-reset link → force them to set a new password NOW
+  if (needsPasswordChange) return <ForcePasswordChange />;
 
   // Logged in but profile missing (migration not run, or user not in dashboard_users)
   if (!profile) {
@@ -174,7 +195,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-bored-gray-50 via-white to-bored-gray-50 flex">
-      <Sidebar currentView={currentView} onNavigate={setCurrentView} />
+      <Sidebar currentView={currentView} onNavigate={navigateTo} />
       <main className="flex-1 ml-64 overflow-y-auto h-screen flex flex-col">
         {/* Always-visible hotel breadcrumb — scopes every view to the active hotel */}
         <HotelContextBar />

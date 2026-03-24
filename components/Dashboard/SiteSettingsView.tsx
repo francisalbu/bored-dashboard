@@ -58,6 +58,7 @@ import {
   updateHotelExperienceOrder,
 } from '../../lib/experienceService';
 import { extractTextFromFile, hasOpenAIKey } from '../../lib/fileExtractor';
+import { ExperienceRadiusMap } from './ExperienceRadiusMap';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Preview card mock data
@@ -970,76 +971,71 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
               </div>
             </div>
 
-            {/* ── City + Radius combined filter ── */}
+            {/* ── City / Radius / Map filter ───────────────────────────── */}
             {(() => {
               const CITIES = ['Lisboa', 'Porto', 'Lagos', 'Viana do Castelo', 'Funchal'];
-              const cityCount = (city: string) =>
-                experiences.filter(e => matchesCity(e, city)).length;
-
               const hasCoords = !!(config?.latitude && config?.longitude);
-
-              // Preview: how many in selected city pass the radius
-              const previewCount = cityFilter
-                ? experiences.filter(e =>
-                    matchesCity(e, cityFilter) &&
-                    (!hasCoords || withinRadius(e, radiusPreview))
-                  ).length
-                : null;
-
-              const handleApplyCombined = () => {
-                if (!cityFilter) return;
-                setRadiusKm(radiusPreview);
-                setExperiences(prev =>
-                  prev.map(exp => ({
-                    ...exp,
-                    is_active:
-                      matchesCity(exp, cityFilter) &&
-                      (!hasCoords || withinRadius(exp, radiusPreview)),
-                  }))
-                );
-              };
+              const cityExps = cityFilter ? experiences.filter(e => matchesCity(e, cityFilter)) : experiences;
+              const active   = cityExps.filter(e => e.is_active).length;
+              const hidden   = cityExps.filter(e => !e.is_active).length;
+              const total    = cityExps.length;
 
               return (
-                <div className="mt-5 mb-6 rounded-xl border border-bored-gray-200 overflow-hidden">
-                  {/* Row 1 — City */}
-                  <div className="flex items-center justify-between px-5 py-4 bg-white">
-                    <div>
-                      <p className="text-sm font-semibold text-bored-black">Hotel city</p>
-                      <p className="text-xs text-bored-gray-400 mt-0.5">Activate experiences by city</p>
+                <div className="mt-6 mb-6 space-y-4">
+
+                  {/* ── Top row: city selector + stats pill ── */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="block text-xs font-semibold text-bored-gray-500 mb-1.5 uppercase tracking-wide">Hotel city</label>
+                      <select
+                        value={cityFilter || ''}
+                        onChange={async e => {
+                          const city = e.target.value || null;
+                          setCityFilter(city);
+                          if (city) {
+                            const updated = experiences.map(exp => ({
+                              ...exp,
+                              is_active: matchesCity(exp, city) && (!hasCoords || withinRadius(exp, radiusPreview)),
+                            }));
+                            setExperiences(updated);
+                            await handleSaveExperienceOrder(updated);
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white cursor-pointer"
+                      >
+                        <option value="">— Select city —</option>
+                        {CITIES.map(city => {
+                          const n = experiences.filter(e => matchesCity(e, city)).length;
+                          return n > 0 ? <option key={city} value={city}>{city} ({n})</option> : null;
+                        })}
+                      </select>
                     </div>
-                    <select
-                      value={cityFilter || ''}
-                      onChange={async e => {
-                        const city = e.target.value || null;
-                        setCityFilter(city);
-                        if (city) {
-                          const updated = experiences.map(exp => ({
-                            ...exp,
-                            is_active:
-                              matchesCity(exp, city) &&
-                              (!hasCoords || withinRadius(exp, radiusPreview)),
-                          }));
-                          setExperiences(updated);
-                          await handleSaveExperienceOrder(updated);
-                        }
-                      }}
-                      className="ml-4 px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-56 flex-shrink-0 cursor-pointer"
-                    >
-                      <option value="">— Select city —</option>
-                      {CITIES.filter(c => cityCount(c) > 0).map(city => (
-                        <option key={city} value={city}>
-                          {city} ({cityCount(city)} experiences)
-                        </option>
-                      ))}
-                    </select>
+
+                    {/* Stats — one single source of truth */}
+                    {cityFilter && (
+                      <div className="flex items-center gap-3 pt-5">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-lg">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                          <span className="text-sm font-semibold text-emerald-700">{active} visible</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg">
+                          <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                          <span className="text-sm font-medium text-slate-500">{hidden} hidden</span>
+                        </div>
+                        <div className="text-xs text-bored-gray-400">{total} total in {cityFilter}</div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Row 2 — Radius (only if hotel has coordinates) */}
-                  {hasCoords && (
-                    <div className="px-5 py-4 bg-bored-gray-50 border-t border-bored-gray-100">
+                  {/* ── Radius slider (only when hotel has coordinates) ── */}
+                  {hasCoords && cityFilter && (
+                    <div className="bg-bored-gray-50 rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
-                        <p className="text-xs font-semibold text-bored-gray-600">Max distance from hotel</p>
-                        <span className="text-sm font-bold text-bored-black tabular-nums">{radiusPreview} km</span>
+                        <div>
+                          <p className="text-sm font-semibold text-bored-black">Radius filter</p>
+                          <p className="text-xs text-bored-gray-400 mt-0.5">Only show experiences within this distance from the hotel</p>
+                        </div>
+                        <span className="text-2xl font-bold text-bored-black tabular-nums">{radiusPreview} <span className="text-sm font-medium text-bored-gray-400">km</span></span>
                       </div>
                       <input
                         type="range"
@@ -1050,64 +1046,57 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                         onChange={e => {
                           const km = Number(e.target.value);
                           setRadiusPreview(km);
-                          // Live-update is_active as slider moves
-                          if (cityFilter) {
-                            setExperiences(prev =>
-                              prev.map(exp => ({
-                                ...exp,
-                                is_active:
-                                  matchesCity(exp, cityFilter) && withinRadius(exp, km),
-                              }))
-                            );
-                          }
+                          setExperiences(prev =>
+                            prev.map(exp => ({
+                              ...exp,
+                              is_active: matchesCity(exp, cityFilter) && withinRadius(exp, km),
+                            }))
+                          );
                         }}
-                        className="w-full h-1.5 rounded-full accent-bored-black cursor-pointer"
+                        onMouseUp={async e => {
+                          // Auto-save when user releases slider
+                          const km = Number((e.target as HTMLInputElement).value);
+                          setRadiusKm(km);
+                          const updated = experiences.map(exp => ({
+                            ...exp,
+                            is_active: matchesCity(exp, cityFilter) && withinRadius(exp, km),
+                          }));
+                          setExperiences(updated);
+                          await handleSaveExperienceOrder(updated);
+                        }}
+                        className="w-full h-2 rounded-full accent-bored-black cursor-pointer"
                       />
-                      <div className="flex justify-between mt-1">
+                      <div className="flex justify-between mt-1.5">
                         <span className="text-[11px] text-bored-gray-400">5 km</span>
                         <span className="text-[11px] text-bored-gray-400">150 km</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Row 3 — Status line */}
-                  {cityFilter && (
-                    <div className="px-5 py-3 bg-white border-t border-bored-gray-100 flex items-center justify-between">
-                      <p className="text-xs text-emerald-600 font-medium">
-                        ✓ {experiences.filter(e => e.is_active).length} active · {experiences.filter(e => !e.is_active).length} hidden
-                        {hasCoords ? ` · within ${radiusPreview} km` : ''}
-                      </p>
-                                            <p className="text-xs text-bored-gray-400">{experiencesSaving ? '⏳ Saving...' : '✓ Saved automatically'}</p>
+                  {/* ── Map ── */}
+                  {hasCoords && cityFilter && (
+                    <ExperienceRadiusMap
+                      hotelLat={config!.latitude!}
+                      hotelLng={config!.longitude!}
+                      hotelName={config!.name}
+                      radiusKm={radiusPreview}
+                      experiences={experiences}
+                      cityFilter={cityFilter}
+                    />
+                  )}
+
+                  {hasCoords && !cityFilter && (
+                    <div className="rounded-xl bg-bored-gray-50 border border-dashed border-bored-gray-200 px-6 py-5 text-sm text-bored-gray-400 text-center">
+                      Select a city above to see the radius map and filter by distance
                     </div>
                   )}
-                </div>
-              );
-            })()}
 
-            {/* Stats */}
-            {(() => {
-              const visible = cityFilter
-                ? experiences.filter(e => matchesCity(e, cityFilter) && e.is_active).length
-                : experiences.filter(e => e.is_active).length;
-              const hidden = cityFilter
-                ? experiences.filter(e => matchesCity(e, cityFilter) && !e.is_active).length
-                : experiences.filter(e => !e.is_active).length;
-              const total = cityFilter
-                ? experiences.filter(e => matchesCity(e, cityFilter)).length
-                : experiences.length;
-              return (
-                <div className="flex gap-4 mb-6">
-                  <div className="px-4 py-2 bg-emerald-50 rounded-lg">
-                    <span className="text-sm font-medium text-emerald-700">{visible} visible</span>
-                  </div>
-                  <div className="px-4 py-2 bg-slate-50 rounded-lg">
-                    <span className="text-sm font-medium text-slate-500">{hidden} hidden</span>
-                  </div>
-                  <div className="px-4 py-2 bg-slate-50 rounded-lg">
-                    <span className="text-sm font-medium text-slate-500">
-                      {total}{cityFilter ? ` in ${cityFilter}` : ' total'}
-                    </span>
-                  </div>
+                  {/* Save status */}
+                  {cityFilter && (
+                    <p className="text-xs text-bored-gray-400 text-right">
+                      {experiencesSaving ? '⏳ Saving...' : '✓ Changes saved automatically'}
+                    </p>
+                  )}
                 </div>
               );
             })()}
