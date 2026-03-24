@@ -132,10 +132,10 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Captured synchronously at module load — before Supabase processes anything.
-// Covers both:
-//   PKCE flow:     ?code=xxx  (Supabase exchanges this for a session + fires PASSWORD_RECOVERY)
-//   Implicit flow: #type=recovery  (tokens already in hash)
-const IS_RECOVERY_REDIRECT =
+// Covers both PKCE (?code=) and implicit (#type=recovery) flows.
+// Stored as a plain variable (not const inside component) so the initial
+// URL is captured before React renders, but we can reset it after use.
+let recoveryRedirectPending =
   new URLSearchParams(window.location.search).has('code') ||
   new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery';
 
@@ -189,11 +189,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (IS_RECOVERY_REDIRECT) {
-        // This is a password-reset redirect (?code= or #type=recovery).
-        // DO NOT render the dashboard with any cached session.
-        // onAuthStateChange will fire PASSWORD_RECOVERY once Supabase processes
-        // the URL — we handle everything there.
+      if (recoveryRedirectPending) {
+        // A password-reset redirect is in progress — block the cached session
+        // from loading the dashboard. Wait for PASSWORD_RECOVERY event.
         setLoading(true);
         return;
       }
@@ -227,13 +225,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(s);
           setUser(s.user);
           initialSessionLoaded.current = true;
+          recoveryRedirectPending = false; // consumed — subsequent events proceed normally
           loadUserData(s.user, true);
           return;
         }
 
-        // If this is any other event during a recovery redirect, ignore it.
-        // PASSWORD_RECOVERY will follow.
-        if (IS_RECOVERY_REDIRECT) return;
+        // If still waiting for PASSWORD_RECOVERY (PKCE exchange in progress), ignore.
+        if (recoveryRedirectPending) return;
 
         setLoading(true);
         // Only treat as a "fresh login" the very first time we see SIGNED_IN
@@ -254,6 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setHotels([]);
         setActiveHotelIdState(null);
+        setNeedsPasswordChange(false); // always clear on sign-out
         initialSessionLoaded.current = false;
         setLoading(false);
       }
