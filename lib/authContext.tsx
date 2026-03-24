@@ -131,11 +131,14 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ⚠️  Captured at module load time (before Supabase's detectSessionInUrl wipes the URL).
-// If ?code= is present, a PKCE exchange is in flight — this is an auth callback
-// (password reset OR magic link OR OAuth). We must NOT use the cached localStorage
-// session and must wait for onAuthStateChange to tell us what kind of auth it is.
-const PKCE_CODE_IN_URL = new URLSearchParams(window.location.search).has('code');
+// ⚠️  Read the URL hash at module-load time — synchronously, before Supabase's
+// detectSessionInUrl processes and clears it.
+// With implicit flow, password-reset redirects arrive as:
+//   https://admin.boredtourist.com/#access_token=xxx&type=recovery&...
+// No network round-trip needed, so this is reliable and race-condition-free.
+const IS_PASSWORD_RECOVERY = new URLSearchParams(
+  window.location.hash.slice(1)
+).get('type') === 'recovery';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -187,12 +190,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (PKCE_CODE_IN_URL) {
-        // A PKCE code exchange is in progress (?code= was in the URL).
-        // The cached localStorage session is stale/irrelevant here.
-        // onAuthStateChange will fire PASSWORD_RECOVERY or SIGNED_IN once
-        // the exchange completes — handle everything there.
-        setLoading(true);
+      if (IS_PASSWORD_RECOVERY) {
+        // Hash has type=recovery — user clicked the reset-password link.
+        // Force the password-change screen regardless of any cached session.
+        // (The recovery session from the hash will be set by detectSessionInUrl;
+        // we don't need to wait for it — ForcePasswordChange only calls updateUser
+        // which always uses Supabase's internal current session.)
+        setNeedsPasswordChange(true);
+        setSession(s);
+        setUser(s?.user ?? null);
+        if (s?.user) {
+          initialSessionLoaded.current = true;
+          loadUserData(s.user, true);
+        } else {
+          setLoading(false);
+        }
         return;
       }
       setSession(s);
@@ -214,15 +226,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // No need to reload profile/hotels — just update the session reference.
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
 
-        // PASSWORD_RECOVERY = user followed the "reset password" link in email.
-        // Supabase fires this event (not SIGNED_IN) when a password-reset PKCE
-        // code is exchanged — regardless of flowType. Show the forced password
-        // change screen immediately.
+        // PASSWORD_RECOVERY = user followed the reset-password link.
+        // Also: if we already flagged IS_PASSWORD_RECOVERY (hash-based detection),
+        // ignore any INITIAL_SESSION / SIGNED_IN events — needsPasswordChange is
+        // already true and the gate in App.tsx will show ForcePasswordChange.
+        if (IS_PASSWORD_RECOVERY && event !== 'PASSWORD_RECOVERY') {
+          // Just update profile silently if not loaded yet, but don't clear the flag
+          if (!initialSessionLoaded.current) {
+            initialSessionLoaded.current = true;
+            loadUserData(s.user, true);
+          }
+          return;
+        }
+
         if (event === 'PASSWORD_RECOVERY') {
           setNeedsPasswordChange(true);
-          setLoading(true);
-          initialSessionLoaded.current = true;
-          loadUserData(s.user, true);
+          if (!initialSessionLoaded.current) {
+            initialSessionLoaded.current = true;
+            loadUserData(s.user, true);
+          }
           return;
         }
 

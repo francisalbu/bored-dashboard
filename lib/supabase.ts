@@ -12,7 +12,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    // Redirect back to the dashboard after OAuth / magic-link flows
-    flowType: 'pkce',
+    flowType: 'implicit',
   },
 });
