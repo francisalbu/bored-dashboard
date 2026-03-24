@@ -103,8 +103,6 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const [experiencesLoading, setExperiencesLoading] = useState(false);
   const [experiencesSaving, setExperiencesSaving] = useState(false);
   const [experiencesSaveError, setExperiencesSaveError] = useState<string | null>(null);
-  const [cityFilter, setCityFilter] = useState<string | null>(null);
-
   // Radius filter
   const [radiusKm, setRadiusKm] = useState<number>(25);
   const [radiusPreview, setRadiusPreview] = useState<number>(25); // live slider value before apply
@@ -175,33 +173,6 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
       setExperiencesLoading(true);
       const data = await fetchHotelExperiencesOrdered(selectedHotelId);
       setExperiences(data);
-
-      // Auto-detect which city was previously saved by finding the city
-      // whose experiences are mostly active
-      const CITY_ALIASES_STATIC: Record<string, string[]> = {
-        'Lisboa':           ['lisbon', 'lisboa'],
-        'Porto':            ['porto', 'oporto'],
-        'Lagos':            ['lagos'],
-        'Viana do Castelo': ['viana', 'viana do castelo'],
-        'Funchal':          ['funchal'],
-      };
-      const activeExps = data.filter(e => e.is_active);
-      if (activeExps.length > 0) {
-        let bestCity: string | null = null;
-        let bestCount = 0;
-        for (const [city, aliases] of Object.entries(CITY_ALIASES_STATIC)) {
-          const count = activeExps.filter(e => {
-            const haystack = [(e.city ?? ''), (e.location ?? '')].join(' ').toLowerCase();
-            return aliases.some(a => haystack.includes(a));
-          }).length;
-          if (count > bestCount) { bestCount = count; bestCity = city; }
-        }
-        // Only set if the dominant city covers at least 50% of active experiences
-        if (bestCity && bestCount >= activeExps.length * 0.5) {
-          setCityFilter(bestCity);
-        }
-      }
-
       setExperiencesLoading(false);
     }
     loadExperiences();
@@ -251,32 +222,6 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     }
   };
 
-  // Activate all experiences from a city, deactivate the rest
-  // CITY_ALIASES: display label → all possible values in the DB (EN + PT)
-  const CITY_ALIASES: Record<string, string[]> = {
-    'Lisboa':           ['lisbon', 'lisboa'],
-    'Porto':            ['porto', 'oporto'],
-    'Lagos':            ['lagos'],
-    'Viana do Castelo': ['viana', 'viana do castelo'],
-    'Funchal':          ['funchal'],
-  };
-
-  const matchesCity = (exp: ExperienceRow, city: string): boolean => {
-    const aliases = CITY_ALIASES[city] ?? [city.toLowerCase()];
-    const haystack = [
-      exp.city?.toLowerCase() ?? '',
-      exp.location?.toLowerCase() ?? '',
-    ].join(' ');
-    return aliases.some(alias => haystack.includes(alias));
-  };
-
-  const handleCitySelect = (city: string) => {
-    setCityFilter(city);
-    setExperiences(prev =>
-      prev.map(exp => ({ ...exp, is_active: matchesCity(exp, city) }))
-    );
-  };
-
   // Haversine distance in km between two lat/lng points
   const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371;
@@ -324,26 +269,13 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
       return;
     }
 
-    // The indices come from the rendered list, which may be filtered by cityFilter.
-    // We must reorder within that display list and then merge back into the full array.
-    const displayList = cityFilter
-      ? experiences.filter(e => matchesCity(e, cityFilter))
-      : [...experiences];
+    const displayList = [...experiences];
 
     const reordered = [...displayList];
     const [dragged] = reordered.splice(dragIndex, 1);
     reordered.splice(toIndex, 0, dragged);
 
-    let updated: ExperienceRow[];
-    if (cityFilter) {
-      // Replace filtered items in their original positions, keeping unfiltered items intact
-      let fi = 0;
-      updated = experiences.map(e =>
-        matchesCity(e, cityFilter) ? reordered[fi++] : e
-      );
-    } else {
-      updated = reordered;
-    }
+    const updated: ExperienceRow[] = reordered;
 
     setExperiences(updated);
     setDragIndex(null);
@@ -971,64 +903,31 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
               </div>
             </div>
 
-            {/* ── City / Radius / Map filter ───────────────────────────── */}
+            {/* ── Radius / Map filter ───────────────────────────────── */}
             {(() => {
-              const CITIES = ['Lisboa', 'Porto', 'Lagos', 'Viana do Castelo', 'Funchal'];
               const hasCoords = !!(config?.latitude && config?.longitude);
-              const cityExps = cityFilter ? experiences.filter(e => matchesCity(e, cityFilter)) : experiences;
-              const active   = cityExps.filter(e => e.is_active).length;
-              const hidden   = cityExps.filter(e => !e.is_active).length;
-              const total    = cityExps.length;
+              const active = experiences.filter(e => e.is_active).length;
+              const hidden = experiences.filter(e => !e.is_active).length;
+              const total  = experiences.length;
 
               return (
                 <div className="mt-6 mb-6 space-y-4">
 
-                  {/* ── Top row: city selector + stats pill ── */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <div className="flex-1 min-w-[220px]">
-                      <label className="block text-xs font-semibold text-bored-gray-500 mb-1.5 uppercase tracking-wide">Hotel city</label>
-                      <select
-                        value={cityFilter || ''}
-                        onChange={async e => {
-                          const city = e.target.value || null;
-                          setCityFilter(city);
-                          if (city) {
-                            const updated = experiences.map(exp => ({
-                              ...exp,
-                              is_active: matchesCity(exp, city) && (!hasCoords || withinRadius(exp, radiusPreview)),
-                            }));
-                            setExperiences(updated);
-                            await handleSaveExperienceOrder(updated);
-                          }
-                        }}
-                        className="w-full px-4 py-2.5 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white cursor-pointer"
-                      >
-                        <option value="">— Select city —</option>
-                        {CITIES.map(city => {
-                          const n = experiences.filter(e => matchesCity(e, city)).length;
-                          return n > 0 ? <option key={city} value={city}>{city} ({n})</option> : null;
-                        })}
-                      </select>
+                  {/* Stats */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-lg">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      <span className="text-sm font-semibold text-emerald-700">{active} visible</span>
                     </div>
-
-                    {/* Stats — one single source of truth */}
-                    {cityFilter && (
-                      <div className="flex items-center gap-3 pt-5">
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-lg">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                          <span className="text-sm font-semibold text-emerald-700">{active} visible</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg">
-                          <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
-                          <span className="text-sm font-medium text-slate-500">{hidden} hidden</span>
-                        </div>
-                        <div className="text-xs text-bored-gray-400">{total} total in {cityFilter}</div>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg">
+                      <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                      <span className="text-sm font-medium text-slate-500">{hidden} hidden</span>
+                    </div>
+                    <div className="text-xs text-bored-gray-400">{total} total</div>
                   </div>
 
-                  {/* ── Radius slider (only when hotel has coordinates) ── */}
-                  {hasCoords && cityFilter && (
+                  {/* ── Radius slider ── */}
+                  {hasCoords && (
                     <div className="bg-bored-gray-50 rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
                         <div>
@@ -1049,17 +948,16 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                           setExperiences(prev =>
                             prev.map(exp => ({
                               ...exp,
-                              is_active: matchesCity(exp, cityFilter) && withinRadius(exp, km),
+                              is_active: withinRadius(exp, km),
                             }))
                           );
                         }}
                         onMouseUp={async e => {
-                          // Auto-save when user releases slider
                           const km = Number((e.target as HTMLInputElement).value);
                           setRadiusKm(km);
                           const updated = experiences.map(exp => ({
                             ...exp,
-                            is_active: matchesCity(exp, cityFilter) && withinRadius(exp, km),
+                            is_active: withinRadius(exp, km),
                           }));
                           setExperiences(updated);
                           await handleSaveExperienceOrder(updated);
@@ -1074,29 +972,26 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                   )}
 
                   {/* ── Map ── */}
-                  {hasCoords && cityFilter && (
+                  {hasCoords && (
                     <ExperienceRadiusMap
                       hotelLat={config!.latitude!}
                       hotelLng={config!.longitude!}
                       hotelName={config!.name}
                       radiusKm={radiusPreview}
                       experiences={experiences}
-                      cityFilter={cityFilter}
                     />
                   )}
 
-                  {hasCoords && !cityFilter && (
+                  {!hasCoords && (
                     <div className="rounded-xl bg-bored-gray-50 border border-dashed border-bored-gray-200 px-6 py-5 text-sm text-bored-gray-400 text-center">
-                      Select a city above to see the radius map and filter by distance
+                      Add the hotel's coordinates in Content settings to enable the radius map
                     </div>
                   )}
 
                   {/* Save status */}
-                  {cityFilter && (
-                    <p className="text-xs text-bored-gray-400 text-right">
-                      {experiencesSaving ? '⏳ Saving...' : '✓ Changes saved automatically'}
-                    </p>
-                  )}
+                  <p className="text-xs text-bored-gray-400 text-right">
+                    {experiencesSaving ? '⏳ Saving...' : '✓ Changes saved automatically'}
+                  </p>
                 </div>
               );
             })()}
@@ -1118,10 +1013,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
               </div>
             ) : (
               <div className="space-y-2">
-                {(cityFilter
-                  ? experiences.filter(e => matchesCity(e, cityFilter))
-                  : experiences
-                ).map((exp, index) => (
+                {experiences.map((exp, index) => (
                   <div
                     key={exp.id}
                     draggable

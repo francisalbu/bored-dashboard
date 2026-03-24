@@ -19,7 +19,6 @@ interface Props {
   hotelName: string;
   radiusKm: number;
   experiences: ExperienceRow[];
-  cityFilter: string | null;
 }
 
 // Simple haversine for distance
@@ -41,7 +40,6 @@ export const ExperienceRadiusMap: React.FC<Props> = ({
   hotelName,
   radiusKm,
   experiences,
-  cityFilter,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
