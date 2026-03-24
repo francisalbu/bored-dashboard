@@ -131,14 +131,13 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ⚠️  Read the URL hash at module-load time — synchronously, before Supabase's
-// detectSessionInUrl processes and clears it.
-// With implicit flow, password-reset redirects arrive as:
-//   https://admin.boredtourist.com/#access_token=xxx&type=recovery&...
-// No network round-trip needed, so this is reliable and race-condition-free.
-const IS_PASSWORD_RECOVERY = new URLSearchParams(
-  window.location.hash.slice(1)
-).get('type') === 'recovery';
+// Captured synchronously at module load — before Supabase processes anything.
+// Covers both:
+//   PKCE flow:     ?code=xxx  (Supabase exchanges this for a session + fires PASSWORD_RECOVERY)
+//   Implicit flow: #type=recovery  (tokens already in hash)
+const IS_RECOVERY_REDIRECT =
+  new URLSearchParams(window.location.search).has('code') ||
+  new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -190,21 +189,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (IS_PASSWORD_RECOVERY) {
-        // Hash has type=recovery — user clicked the reset-password link.
-        // Force the password-change screen regardless of any cached session.
-        // (The recovery session from the hash will be set by detectSessionInUrl;
-        // we don't need to wait for it — ForcePasswordChange only calls updateUser
-        // which always uses Supabase's internal current session.)
-        setNeedsPasswordChange(true);
-        setSession(s);
-        setUser(s?.user ?? null);
-        if (s?.user) {
-          initialSessionLoaded.current = true;
-          loadUserData(s.user, true);
-        } else {
-          setLoading(false);
-        }
+      if (IS_RECOVERY_REDIRECT) {
+        // This is a password-reset redirect (?code= or #type=recovery).
+        // DO NOT render the dashboard with any cached session.
+        // onAuthStateChange will fire PASSWORD_RECOVERY once Supabase processes
+        // the URL — we handle everything there.
+        setLoading(true);
         return;
       }
       setSession(s);
@@ -226,27 +216,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // No need to reload profile/hotels — just update the session reference.
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
 
-        // PASSWORD_RECOVERY = user followed the reset-password link.
-        // Also: if we already flagged IS_PASSWORD_RECOVERY (hash-based detection),
-        // ignore any INITIAL_SESSION / SIGNED_IN events — needsPasswordChange is
-        // already true and the gate in App.tsx will show ForcePasswordChange.
-        if (IS_PASSWORD_RECOVERY && event !== 'PASSWORD_RECOVERY') {
-          // Just update profile silently if not loaded yet, but don't clear the flag
-          if (!initialSessionLoaded.current) {
-            initialSessionLoaded.current = true;
-            loadUserData(s.user, true);
-          }
+        if (event === 'PASSWORD_RECOVERY') {
+          setNeedsPasswordChange(true);
+          setSession(s);
+          setUser(s.user);
+          initialSessionLoaded.current = true;
+          loadUserData(s.user, true);
           return;
         }
 
-        if (event === 'PASSWORD_RECOVERY') {
-          setNeedsPasswordChange(true);
-          if (!initialSessionLoaded.current) {
-            initialSessionLoaded.current = true;
-            loadUserData(s.user, true);
-          }
-          return;
-        }
+        // If this is any other event during a recovery redirect, ignore it.
+        // PASSWORD_RECOVERY will follow.
+        if (IS_RECOVERY_REDIRECT) return;
 
         setLoading(true);
         // Only treat as a "fresh login" the very first time we see SIGNED_IN
