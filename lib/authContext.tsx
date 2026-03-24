@@ -177,13 +177,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Get current session on mount
+    // Get current session on mount.
+    // If the URL hash contains type=recovery, this is a password-reset redirect —
+    // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const isRecovery = hashParams.get('type') === 'recovery';
+
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
         initialSessionLoaded.current = true;
-        loadUserData(s.user, true); // page refresh → restore last hotel
+        if (isRecovery) {
+          setNeedsPasswordChange(true);
+          // Clean the hash so it doesn't re-trigger on refresh
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        loadUserData(s.user, !isRecovery);
       } else {
         setLoading(false);
       }
