@@ -131,14 +131,13 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ⚠️  Read the URL SYNCHRONOUSLY at module-load time — before Supabase's PKCE
-// handler runs detectSessionInUrl and wipes the entire query string (including
-// our custom ?type=recovery marker) via history.replaceState.
-// If we check inside getSession().then() or onAuthStateChange it's already gone.
+// ⚠️  Recovery flag is written by an inline <script> in index.html that runs
+// BEFORE any ES module (including the Supabase client) is evaluated.
+// We read it once here and clear it so a hard-refresh doesn't re-trigger.
 const IS_PASSWORD_RECOVERY = (() => {
-  const search = new URLSearchParams(window.location.search);
-  const hash   = new URLSearchParams(window.location.hash.slice(1));
-  return search.get('type') === 'recovery' || hash.get('type') === 'recovery';
+  const flag = sessionStorage.getItem('bored_pw_recovery') === '1';
+  if (flag) sessionStorage.removeItem('bored_pw_recovery');
+  return flag;
 })();
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -217,9 +216,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // PASSWORD_RECOVERY = user followed the "reset password" link in email.
         // Show the forced password change screen immediately.
-        // Also catch SIGNED_IN when IS_PASSWORD_RECOVERY is set: with PKCE flow
-        // Supabase may fire SIGNED_IN instead of PASSWORD_RECOVERY.
-        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && IS_PASSWORD_RECOVERY)) {
+        // Also catch SIGNED_IN / INITIAL_SESSION when IS_PASSWORD_RECOVERY is set:
+        // with PKCE flow Supabase may complete the exchange before onAuthStateChange
+        // is registered and replay state as INITIAL_SESSION instead of PASSWORD_RECOVERY.
+        if (event === 'PASSWORD_RECOVERY' ||
+            ((event === 'SIGNED_IN' || (event as string) === 'INITIAL_SESSION') && IS_PASSWORD_RECOVERY)) {
           setNeedsPasswordChange(true);
           setLoading(true);
           loadUserData(s.user, true);

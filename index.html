@@ -52,6 +52,19 @@
         border-radius: 3px;
       }
     </style>
+  <!-- Capture password-recovery flag BEFORE any module JS runs.
+       Supabase's PKCE detectSessionInUrl wipes the query string asynchronously
+       but ES module evaluation order is non-trivial. Storing in sessionStorage
+       here (plain sync script) guarantees we always capture it. -->
+  <script>
+    (function () {
+      var p = new URLSearchParams(window.location.search);
+      var h = new URLSearchParams(window.location.hash.slice(1));
+      if (p.get('type') === 'recovery' || h.get('type') === 'recovery') {
+        sessionStorage.setItem('bored_pw_recovery', '1');
+      }
+    })();
+  </script>
   <script type="importmap">
 {
   "imports": {
