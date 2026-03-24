@@ -42,13 +42,15 @@ export function ForcePasswordChange() {
       return;
     }
 
-    // Clear the must_change_password flag so this screen won't appear again
+    // Clear the must_change_password flag BEFORE signing out.
+    // Wait for it to complete so the updated metadata is persisted server-side.
     await supabase.auth.updateUser({ data: { must_change_password: false } });
+    // Small wait to ensure Supabase has flushed the metadata update
+    await new Promise(r => setTimeout(r, 500));
 
     setSaving(false);
     setDone(true);
-    // Sign out fully so the user gets a clean session on next login
-    // (the recovery session is limited and can't load profile data reliably)
+    // Sign out so the user gets a clean session on next login
     setTimeout(async () => {
       await supabase.auth.signOut();
     }, 2000);

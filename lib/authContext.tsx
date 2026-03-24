@@ -212,9 +212,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        // TOKEN_REFRESHED / USER_UPDATED = silent token renewal or updateUser() call.
-        // No need to reload profile/hotels — just update the session reference.
-        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
+        // TOKEN_REFRESHED = silent token renewal, just update session reference.
+        if (event === 'TOKEN_REFRESHED') return;
+        // USER_UPDATED = updateUser() was called (e.g. password or metadata change).
+        // Refresh the user reference so stale metadata doesn't linger.
+        if (event === 'USER_UPDATED') {
+          setSession(s);
+          setUser(s.user);
+          return;
+        }
 
         if (event === 'PASSWORD_RECOVERY') {
           setNeedsPasswordChange(true);
@@ -237,7 +243,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // First login with admin-set credentials: must_change_password flag
-        // is stored in user_metadata by createDashboardUser()
+        // is stored in user_metadata by createDashboardUser().
+        // Re-read from the live session user to avoid stale closure values.
         if (isFreshLogin && s.user.user_metadata?.must_change_password === true) {
           setNeedsPasswordChange(true);
         }
