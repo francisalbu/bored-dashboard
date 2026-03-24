@@ -47,8 +47,11 @@ export function ForcePasswordChange() {
 
     setSaving(false);
     setDone(true);
-    // Wait a beat so the user sees the success message, then unlock the dashboard
-    setTimeout(() => clearPasswordChangeRequired(), 1800);
+    // Sign out fully so the user gets a clean session on next login
+    // (the recovery session is limited and can't load profile data reliably)
+    setTimeout(async () => {
+      await supabase.auth.signOut();
+    }, 2000);
   };
 
   if (done) {
@@ -59,7 +62,7 @@ export function ForcePasswordChange() {
             <CheckCircle size={28} className="text-green-600" />
           </div>
           <h2 className="text-xl font-semibold text-bored-black mb-1">Password saved!</h2>
-          <p className="text-sm text-bored-gray-400">Taking you to your dashboard…</p>
+          <p className="text-sm text-bored-gray-400">Redirecting to sign in…</p>
         </div>
       </div>
     );
