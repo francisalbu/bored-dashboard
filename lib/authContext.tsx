@@ -131,14 +131,11 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ⚠️  Recovery flag is written by an inline <script> in index.html that runs
-// BEFORE any ES module (including the Supabase client) is evaluated.
-// We read it once here and clear it so a hard-refresh doesn't re-trigger.
-const IS_PASSWORD_RECOVERY = (() => {
-  const flag = sessionStorage.getItem('bored_pw_recovery') === '1';
-  if (flag) sessionStorage.removeItem('bored_pw_recovery');
-  return flag;
-})();
+// ⚠️  Captured at module load time (before Supabase's detectSessionInUrl wipes the URL).
+// If ?code= is present, a PKCE exchange is in flight — this is an auth callback
+// (password reset OR magic link OR OAuth). We must NOT use the cached localStorage
+// session and must wait for onAuthStateChange to tell us what kind of auth it is.
+const PKCE_CODE_IN_URL = new URLSearchParams(window.location.search).has('code');
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -190,17 +187,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (PKCE_CODE_IN_URL) {
+        // A PKCE code exchange is in progress (?code= was in the URL).
+        // The cached localStorage session is stale/irrelevant here.
+        // onAuthStateChange will fire PASSWORD_RECOVERY or SIGNED_IN once
+        // the exchange completes — handle everything there.
+        setLoading(true);
+        return;
+      }
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
         initialSessionLoaded.current = true;
-        if (IS_PASSWORD_RECOVERY) {
-          setNeedsPasswordChange(true);
-        }
-        loadUserData(s.user, !IS_PASSWORD_RECOVERY);
+        loadUserData(s.user, true);
       } else {
-        // No session yet — PKCE code exchange may still be in flight.
-        // onAuthStateChange will fire PASSWORD_RECOVERY or SIGNED_IN next.
         setLoading(false);
       }
     });
@@ -215,14 +215,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
 
         // PASSWORD_RECOVERY = user followed the "reset password" link in email.
-        // Show the forced password change screen immediately.
-        // Also catch SIGNED_IN / INITIAL_SESSION when IS_PASSWORD_RECOVERY is set:
-        // with PKCE flow Supabase may complete the exchange before onAuthStateChange
-        // is registered and replay state as INITIAL_SESSION instead of PASSWORD_RECOVERY.
-        if (event === 'PASSWORD_RECOVERY' ||
-            ((event === 'SIGNED_IN' || (event as string) === 'INITIAL_SESSION') && IS_PASSWORD_RECOVERY)) {
+        // Supabase fires this event (not SIGNED_IN) when a password-reset PKCE
+        // code is exchanged — regardless of flowType. Show the forced password
+        // change screen immediately.
+        if (event === 'PASSWORD_RECOVERY') {
           setNeedsPasswordChange(true);
           setLoading(true);
+          initialSessionLoaded.current = true;
           loadUserData(s.user, true);
           return;
         }
