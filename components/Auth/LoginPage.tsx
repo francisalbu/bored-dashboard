@@ -45,7 +45,7 @@ export function LoginPage() {
 
     const { error: err } = await supabase.auth.resetPasswordForEmail(
       resetEmail.trim(),
-      { redirectTo: redirectBase }
+      { redirectTo: `${redirectBase}?type=recovery` }
     );
     setResetLoading(false);
     if (err) { setResetError(err.message); return; }

@@ -181,8 +181,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      const hashParams = new URLSearchParams(window.location.hash.slice(1));
-      const isRecovery = hashParams.get('type') === 'recovery';
+      // PKCE flow: Supabase redirects back with ?type=recovery&code=xxx (query string)
+      // Implicit flow: uses #type=recovery in the hash
+      // Check both so this works regardless of which flow is active.
+      const hashParams   = new URLSearchParams(window.location.hash.slice(1));
+      const searchParams = new URLSearchParams(window.location.search);
+      const isRecovery =
+        hashParams.get('type')   === 'recovery' ||
+        searchParams.get('type') === 'recovery';
 
       setSession(s);
       setUser(s?.user ?? null);
@@ -190,8 +196,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         initialSessionLoaded.current = true;
         if (isRecovery) {
           setNeedsPasswordChange(true);
-          // Clean the hash so it doesn't re-trigger on refresh
-          window.history.replaceState(null, '', window.location.pathname);
+          // Clean both hash and query so it doesn't re-trigger on refresh
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('type');
+          window.history.replaceState(null, '', cleanUrl.pathname + (cleanUrl.search === '?' ? '' : cleanUrl.search));
         }
         loadUserData(s.user, !isRecovery);
       } else {

@@ -368,7 +368,7 @@ export async function sendPasswordReset(
   email: string
 ): Promise<{ success: boolean; error?: string }> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}?mode=reset-password`,
+    redirectTo: `${window.location.origin}?type=recovery`,
   });
   return error ? { success: false, error: error.message } : { success: true };
 }
