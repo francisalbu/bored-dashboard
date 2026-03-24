@@ -131,6 +131,16 @@ async function fetchAccessibleHotels(userId: string, role: string): Promise<Acce
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠️  Read the URL SYNCHRONOUSLY at module-load time — before Supabase's PKCE
+// handler runs detectSessionInUrl and wipes the entire query string (including
+// our custom ?type=recovery marker) via history.replaceState.
+// If we check inside getSession().then() or onAuthStateChange it's already gone.
+const IS_PASSWORD_RECOVERY = (() => {
+  const search = new URLSearchParams(window.location.search);
+  const hash   = new URLSearchParams(window.location.hash.slice(1));
+  return search.get('type') === 'recovery' || hash.get('type') === 'recovery';
+})();
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -181,28 +191,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If the URL hash contains type=recovery, this is a password-reset redirect —
     // show ForcePasswordChange immediately instead of the normal dashboard.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      // PKCE flow: Supabase redirects back with ?type=recovery&code=xxx (query string)
-      // Implicit flow: uses #type=recovery in the hash
-      // Check both so this works regardless of which flow is active.
-      const hashParams   = new URLSearchParams(window.location.hash.slice(1));
-      const searchParams = new URLSearchParams(window.location.search);
-      const isRecovery =
-        hashParams.get('type')   === 'recovery' ||
-        searchParams.get('type') === 'recovery';
-
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
         initialSessionLoaded.current = true;
-        if (isRecovery) {
+        if (IS_PASSWORD_RECOVERY) {
           setNeedsPasswordChange(true);
-          // Clean both hash and query so it doesn't re-trigger on refresh
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete('type');
-          window.history.replaceState(null, '', cleanUrl.pathname + (cleanUrl.search === '?' ? '' : cleanUrl.search));
         }
-        loadUserData(s.user, !isRecovery);
+        loadUserData(s.user, !IS_PASSWORD_RECOVERY);
       } else {
+        // No session yet — PKCE code exchange may still be in flight.
+        // onAuthStateChange will fire PASSWORD_RECOVERY or SIGNED_IN next.
         setLoading(false);
       }
     });
@@ -218,7 +217,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // PASSWORD_RECOVERY = user followed the "reset password" link in email.
         // Show the forced password change screen immediately.
-        if (event === 'PASSWORD_RECOVERY') {
+        // Also catch SIGNED_IN when IS_PASSWORD_RECOVERY is set: with PKCE flow
+        // Supabase may fire SIGNED_IN instead of PASSWORD_RECOVERY.
+        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && IS_PASSWORD_RECOVERY)) {
           setNeedsPasswordChange(true);
           setLoading(true);
           loadUserData(s.user, true);
