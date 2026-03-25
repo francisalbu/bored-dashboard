@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Save,
   Palette,
@@ -106,6 +106,8 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   // Radius filter
   const [radiusKm, setRadiusKm] = useState<number>(25);
   const [radiusPreview, setRadiusPreview] = useState<number>(25); // live slider value before apply
+  // Tracks which hotel has already had its initial radius applied (avoids double-run)
+  const initialRadiusApplied = useRef<string | null>(null);
 
   // Password change state
   const [pwCurrent, setPwCurrent] = useState('');
@@ -177,6 +179,26 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
     }
     loadExperiences();
   }, [selectedHotelId]);
+
+  // Once both hotel coords AND experiences are ready, apply the initial radius filter
+  // and sort active experiences to the top.
+  // Runs whenever coords change (config loads) OR loading finishes (experiences load).
+  useEffect(() => {
+    if (!config?.latitude || !config?.longitude) return;
+    if (experiencesLoading || experiences.length === 0) return;
+    if (initialRadiusApplied.current === selectedHotelId) return; // already applied
+    initialRadiusApplied.current = selectedHotelId;
+    setExperiences(prev => {
+      const updated = prev.map(exp => ({
+        ...exp,
+        is_active: withinRadius(exp, radiusKm),
+      }));
+      // Active experiences always bubble to the top
+      updated.sort((a, b) => (a.is_active === b.is_active ? 0 : a.is_active ? -1 : 1));
+      return updated;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.latitude, config?.longitude, experiencesLoading, selectedHotelId]);
 
   const handleSave = async () => {
     if (!config) return;
@@ -945,12 +967,14 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                         onChange={e => {
                           const km = Number(e.target.value);
                           setRadiusPreview(km);
-                          setExperiences(prev =>
-                            prev.map(exp => ({
+                          setExperiences(prev => {
+                            const updated = prev.map(exp => ({
                               ...exp,
                               is_active: withinRadius(exp, km),
-                            }))
-                          );
+                            }));
+                            updated.sort((a, b) => (a.is_active === b.is_active ? 0 : a.is_active ? -1 : 1));
+                            return updated;
+                          });
                         }}
                         onMouseUp={async e => {
                           const km = Number((e.target as HTMLInputElement).value);
@@ -959,6 +983,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                             ...exp,
                             is_active: withinRadius(exp, km),
                           }));
+                          updated.sort((a, b) => (a.is_active === b.is_active ? 0 : a.is_active ? -1 : 1));
                           setExperiences(updated);
                           await handleSaveExperienceOrder(updated);
                         }}

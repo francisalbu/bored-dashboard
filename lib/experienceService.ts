@@ -188,29 +188,43 @@ export async function removeExperienceFromHotelCatalog(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchHotelExperiencesOrdered(hotelId: string): Promise<ExperienceRow[]> {
-  const { data, error } = await supabase
-    .from('hotel_experiences')
-    .select('display_order, is_active, experiences(*)')
-    .eq('hotel_id', hotelId)
-    .order('display_order', { ascending: true });
+  // Fetch both in parallel: hotel's per-experience settings + full marketplace
+  const [hotelData, allExps] = await Promise.all([
+    supabase
+      .from('hotel_experiences')
+      .select('display_order, is_active, experience_id, experiences(*)')
+      .eq('hotel_id', hotelId)
+      .order('display_order', { ascending: true })
+      .then(r => r.data ?? []),
+    fetchAllExperiences(),
+  ]);
 
-  if (error) {
-    console.error('Error fetching hotel experiences ordered:', error);
-    // Fallback: return global list so the UI is never empty
-    return fetchAllExperiences();
+  if (hotelData.length === 0) {
+    // Hotel hasn't customised its catalog yet — show full global list
+    return allExps;
   }
 
-  if (!data || data.length === 0) {
-    // Hotel hasn't customised its catalog yet — show global list
-    // On first Save Order or toggle, rows will be upserted into hotel_experiences
-    return fetchAllExperiences();
+  // Build a map of experience_id → hotel-level settings
+  const hotelMap = new Map<number, { display_order: number; is_active: boolean }>();
+  for (const row of hotelData as any[]) {
+    hotelMap.set(row.experience_id, { display_order: row.display_order, is_active: row.is_active });
   }
 
-  // Override is_active with the per-hotel value (not the global experiences.is_active)
-  return data.map((row: any) => ({
-    ...(row.experiences as ExperienceRow),
-    is_active: row.is_active,
-  }));
+  // Experiences that are in the hotel catalog, ordered by saved display_order
+  const catalogued = (hotelData as any[])
+    .filter(row => row.experiences)
+    .map(row => ({
+      ...(row.experiences as ExperienceRow),
+      is_active: row.is_active,
+    }));
+
+  // Marketplace experiences NOT yet in this hotel's catalog (new ones) → appended at end, inactive
+  const cataloguedIds = new Set(hotelMap.keys());
+  const uncatalogued = allExps
+    .filter(exp => !cataloguedIds.has(exp.id))
+    .map(exp => ({ ...exp, is_active: false }));
+
+  return [...catalogued, ...uncatalogued];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
