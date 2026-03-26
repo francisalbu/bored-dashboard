@@ -96,7 +96,10 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [activeSection, setActiveSection] = useState<Section>('branding');
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    const saved = localStorage.getItem(`settings_section_${activeHotelId || ''}`);
+    return (saved as Section) || 'branding';
+  });
 
   // Experiences state
   const [experiences, setExperiences] = useState<ExperienceRow[]>([]);
@@ -104,8 +107,14 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   const [experiencesSaving, setExperiencesSaving] = useState(false);
   const [experiencesSaveError, setExperiencesSaveError] = useState<string | null>(null);
   // Radius filter
-  const [radiusKm, setRadiusKm] = useState<number>(25);
-  const [radiusPreview, setRadiusPreview] = useState<number>(25); // live slider value before apply
+  const [radiusKm, setRadiusKm] = useState<number>(() => {
+    const saved = localStorage.getItem(`radius_km_${activeHotelId || ''}`);
+    return saved ? Math.max(5, Math.min(150, Number(saved))) : 25;
+  });
+  const [radiusPreview, setRadiusPreview] = useState<number>(() => {
+    const saved = localStorage.getItem(`radius_km_${activeHotelId || ''}`);
+    return saved ? Math.max(5, Math.min(150, Number(saved))) : 25;
+  });
   // Tracks which hotel has already had its initial radius applied (avoids double-run)
   const initialRadiusApplied = useRef<string | null>(null);
 
@@ -171,13 +180,17 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
   // Load experiences ordered by this hotel's per-hotel display_order
   useEffect(() => {
     if (!selectedHotelId) return;
+    let cancelled = false;
     async function loadExperiences() {
       setExperiencesLoading(true);
       const data = await fetchHotelExperiencesOrdered(selectedHotelId);
+      if (cancelled) return;
       setExperiences(data);
       setExperiencesLoading(false);
     }
     loadExperiences();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedHotelId]);
 
   // Once both hotel coords AND experiences are ready, apply the initial radius filter
@@ -516,7 +529,10 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
         ]).map(section => (
           <button
             key={section.key}
-            onClick={() => setActiveSection(section.key)}
+            onClick={() => {
+              setActiveSection(section.key);
+              localStorage.setItem(`settings_section_${selectedHotelId}`, section.key);
+            }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${
               activeSection === section.key
                 ? 'bg-bored-black text-white shadow-sm'
@@ -979,6 +995,7 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
                         onMouseUp={async e => {
                           const km = Number((e.target as HTMLInputElement).value);
                           setRadiusKm(km);
+                          localStorage.setItem(`radius_km_${selectedHotelId}`, String(km));
                           const updated = experiences.map(exp => ({
                             ...exp,
                             is_active: withinRadius(exp, km),

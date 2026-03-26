@@ -89,17 +89,29 @@ export const BLANK_EXPERIENCE: Omit<ExperienceInsert, 'operator_id'> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchAllExperiences(): Promise<ExperienceRow[]> {
-  const { data, error } = await supabase
-    .from('experiences')
-    .select('*')
-    .order('display_order', { ascending: true });
+  const PAGE = 1000;
+  const all: ExperienceRow[] = [];
+  let from = 0;
 
-  if (error) {
-    console.error('Error fetching experiences:', error);
-    return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from('experiences')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) {
+      console.error('Error fetching experiences:', error);
+      break;
+    }
+
+    if (!data || data.length === 0) break;
+    all.push(...(data as ExperienceRow[]));
+    if (data.length < PAGE) break; // last page
+    from += PAGE;
   }
 
-  return data as ExperienceRow[];
+  return all;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,41 +200,46 @@ export async function removeExperienceFromHotelCatalog(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchHotelExperiencesOrdered(hotelId: string): Promise<ExperienceRow[]> {
-  // Fetch both in parallel: hotel's per-experience settings + full marketplace
-  const [hotelData, allExps] = await Promise.all([
+  // Single query: fetch ALL experiences + per-hotel overrides in parallel
+  const [allExps, hotelRows] = await Promise.all([
+    fetchAllExperiences(),
     supabase
       .from('hotel_experiences')
-      .select('display_order, is_active, experience_id, experiences(*)')
+      .select('experience_id, display_order, is_active')
       .eq('hotel_id', hotelId)
-      .order('display_order', { ascending: true })
       .then(r => r.data ?? []),
-    fetchAllExperiences(),
   ]);
 
-  if (hotelData.length === 0) {
-    // Hotel hasn't customised its catalog yet — show full global list
+  if ((hotelRows as any[]).length === 0) {
+    // Hotel has no catalog yet — return full marketplace list as-is
     return allExps;
   }
 
-  // Build a map of experience_id → hotel-level settings
+  // Build lookup: experience_id → { display_order, is_active }
   const hotelMap = new Map<number, { display_order: number; is_active: boolean }>();
-  for (const row of hotelData as any[]) {
+  for (const row of hotelRows as any[]) {
     hotelMap.set(row.experience_id, { display_order: row.display_order, is_active: row.is_active });
   }
 
-  // Experiences that are in the hotel catalog, ordered by saved display_order
-  const catalogued = (hotelData as any[])
-    .filter(row => row.experiences)
-    .map(row => ({
-      ...(row.experiences as ExperienceRow),
-      is_active: row.is_active,
-    }));
+  // Split into catalogued (with saved order) and new (not yet in catalog)
+  const catalogued: ExperienceRow[] = [];
+  const uncatalogued: ExperienceRow[] = [];
 
-  // Marketplace experiences NOT yet in this hotel's catalog (new ones) → appended at end, inactive
-  const cataloguedIds = new Set(hotelMap.keys());
-  const uncatalogued = allExps
-    .filter(exp => !cataloguedIds.has(exp.id))
-    .map(exp => ({ ...exp, is_active: false }));
+  for (const exp of allExps) {
+    const hotelEntry = hotelMap.get(exp.id);
+    if (hotelEntry) {
+      catalogued.push({ ...exp, is_active: hotelEntry.is_active });
+    } else {
+      uncatalogued.push({ ...exp, is_active: false });
+    }
+  }
+
+  // Sort catalogued by saved display_order
+  catalogued.sort((a, b) => {
+    const ao = hotelMap.get(a.id)?.display_order ?? 999;
+    const bo = hotelMap.get(b.id)?.display_order ?? 999;
+    return ao - bo;
+  });
 
   return [...catalogued, ...uncatalogued];
 }

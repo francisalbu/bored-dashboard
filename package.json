@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "create-admin": "node scripts/create-admin.mjs",
     "create-hotel-user": "node scripts/create-hotel-user.mjs",
-    "create-editory-admin": "node scripts/create-editory-admin.mjs"
+    "create-editory-admin": "node scripts/create-editory-admin.mjs",
+    "create-lisbeyond-admin": "node scripts/create-lisbeyond-admin.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
