@@ -64,7 +64,7 @@ async function run() {
     email         : USER_EMAIL,
     password      : USER_PASSWORD,
     email_confirm : true,
-    user_metadata : { full_name: USER_NAME },
+    user_metadata : { full_name: USER_NAME, must_change_password: true },
   });
 
   if (authError) {

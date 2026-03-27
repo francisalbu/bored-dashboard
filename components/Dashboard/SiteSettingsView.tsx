@@ -498,24 +498,6 @@ export const SiteSettingsView: React.FC<SiteSettingsViewProps> = ({ activeHotelI
         </div>
       </div>
 
-      {/* Hotel Selector */}
-      {hotelIds.length > 1 && (
-        <div className="mb-8">
-          <label className="block text-xs font-semibold text-bored-gray-400 uppercase tracking-wider mb-2">
-            Hotel
-          </label>
-          <select
-            value={selectedHotelId}
-            onChange={e => setSelectedHotelId(e.target.value)}
-            className="px-4 py-3 border border-bored-gray-200 rounded-xl text-sm font-medium bg-white w-64"
-          >
-            {hotelIds.map(h => (
-              <option key={h.id} value={h.id}>{h.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {/* Section Nav */}
       <div className="flex gap-2 mb-8 flex-wrap">
         {([
